@@ -106,6 +106,11 @@ applies the rubric rather than being agreeable — only a real call can do that:
 GEMINI_API_KEY=... pytest -m live
 ```
 
+Budget those calls. The free tier allows **20 requests per day per model** and
+the live suite spends 6, so there are three runs in a day and ad-hoc debugging
+scripts come out of the same pool. A 429 here reports `retryDelay: 48s`, which
+is misleading — the daily quota does not reset for hours.
+
 `tests/test_pushover.py` sends three deliberately bad talk tracks — fluent
 hand-waving, right-shape-wrong-arithmetic, and bare placeholders — and asserts
 none of them are graded `covered`. **Run these after any prompt edit and before
@@ -159,6 +164,7 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `context_too_large` | 413 | Reasoning exceeds `AI_CONTEXT_MAX_CHARS`. |
 | `provider_limited` | 429 | Provider rate limit — retry later. |
 | `invalid_model_response` | 502 | Model returned an ungradeable or ungrounded response. |
+| `response_truncated` | 502 | Model ran out of output budget mid-answer; raise `AI_MAX_OUTPUT_TOKENS`. |
 | `provider_error` | 502 | Provider rejected the request. |
 | `provider_unavailable` | 503 | Transport failure or repeated 5xx. |
 
@@ -175,7 +181,8 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `AI_TIMEOUT_SECONDS` | no | Provider timeout; defaults to `30`. |
 | `AI_MAX_RETRIES` | no | Retries for transient provider failures; defaults to `1`. |
 | `AI_CONTEXT_MAX_CHARS` | no | Hard cap on serialized context; defaults to `24000`. |
-| `AI_MAX_OUTPUT_TOKENS` | no | Maximum provider output tokens; defaults to `2000`. |
+| `AI_MAX_OUTPUT_TOKENS` | no | Maximum provider output tokens; defaults to `8000`. The model's reasoning is drawn from this same budget, so it must cover thinking *and* the JSON — a value near the size of the answer alone truncates most grades. |
+| `AI_REASONING_EFFORT` | no | `low`, `medium` or `high`; defaults to `low`. Bounds the thinking budget so it cannot consume the answer. Raise it if the pushover fixtures start passing. |
 
 The model ids in `STRICT_GEMINI_MODELS` were copied from `ativscrum-ai-api`.
 Confirm them against the provider's current model list before deploying.

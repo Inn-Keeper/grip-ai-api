@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,7 +22,15 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = 30
     ai_max_retries: int = 1
     ai_context_max_chars: int = 24_000
-    ai_max_output_tokens: int = 2_000
+    # Shared with the model's reasoning tokens, not just the JSON it returns.
+    # Grading a talk track was measured at up to ~1,900 reasoning tokens before
+    # ~650 tokens of answer, so 2,000 truncated most responses.
+    ai_max_output_tokens: int = 8_000
+    # The thinking budget is dynamic and grows into whatever room it is given,
+    # so the cap above is not on its own enough to keep the JSON from being cut
+    # off. This is a calibration knob, not a constant: raise it if the pushover
+    # fixtures start passing, which would mean the grader has gone lenient.
+    ai_reasoning_effort: Literal["low", "medium", "high"] = "low"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

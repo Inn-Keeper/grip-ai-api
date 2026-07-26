@@ -75,6 +75,9 @@ class GeminiClient:
                 },
             ],
             "max_completion_tokens": self.settings.ai_max_output_tokens,
+            # Reasoning is drawn from max_completion_tokens, so an unbounded
+            # thinking budget can consume the response before it is written.
+            "reasoning_effort": self.settings.ai_reasoning_effort,
             "tool_choice": "none",
             # Grading should be as close to reproducible as the provider allows:
             # the same answer graded twice should not swing a verdict.
@@ -123,7 +126,20 @@ class GeminiClient:
 
             try:
                 payload = response.json()
-                content = payload["choices"][0]["message"]["content"]
+                choice = payload["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    # Reasoning tokens share AI_MAX_OUTPUT_TOKENS with the JSON
+                    # itself, so a long deliberation can leave no room to
+                    # answer. Distinct from invalid_model_response on purpose:
+                    # that code means the evidence rule fired, and a budget
+                    # problem wearing it would read as a rubric refusal.
+                    raise AppError(
+                        502,
+                        "response_truncated",
+                        "The AI provider's response was cut off before it was complete.",
+                        retries=retries,
+                    )
+                content = choice["message"]["content"]
                 value = output_type.model_validate_json(content)
                 usage = payload.get("usage") or {}
                 return GeminiResult(
