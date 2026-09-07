@@ -9,6 +9,8 @@ from app.supabase import Session
 
 def settings() -> Settings:
     return Settings(
+        _env_file=None,
+        ai_provider="gemini",
         supabase_url="https://example.supabase.co",
         supabase_anon_key="anon",
         gemini_api_key="key",
@@ -43,9 +45,9 @@ class StubGemini:
         if self.fail:
             raise self.fail
 
-        from app.gemini import GeminiResult
+        from app.generation import GenerationResult
 
-        return GeminiResult(
+        return GenerationResult(
             value=self.value, prompt_tokens=10, completion_tokens=10, retries=0
         )
 

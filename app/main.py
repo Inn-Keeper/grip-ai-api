@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import Settings
 from app.errors import AppError
 from app.gemini import GeminiClient
+from app.ollama import OllamaClient
 from app.schemas import GradeRequest, GradeResponse
 from app.service import GradeService
 from app.supabase import SupabaseGateway
@@ -35,7 +36,11 @@ def create_app(
                 app.state.grade_service = GradeService(
                     settings,
                     SupabaseGateway(settings, http_client=http_client),
-                    GeminiClient(settings, http_client=http_client),
+                    (
+                        OllamaClient
+                        if settings.ai_provider == "ollama"
+                        else GeminiClient
+                    )(settings, http_client=http_client),
                 )
             yield
 
@@ -78,8 +83,9 @@ def create_app(
         required = {
             "SUPABASE_URL": settings.supabase_url,
             "SUPABASE_ANON_KEY": settings.supabase_anon_key,
-            "GEMINI_API_KEY": settings.gemini_api_key,
         }
+        if settings.ai_provider == "gemini":
+            required["GEMINI_API_KEY"] = settings.gemini_api_key
         missing = [name for name, value in required.items() if not value]
         if missing:
             return JSONResponse(

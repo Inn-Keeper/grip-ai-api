@@ -3,6 +3,10 @@
 Stateless FastAPI service that grades the **talk track** of a Grip Arch Board
 round — the written reasoning a candidate produces alongside a system design.
 
+The default provider is **local Qwen through Ollama** (`grip-grader`). Gemini
+remains available with `AI_PROVIDER=gemini` for comparison. No new Python
+dependency is required: both adapters use the existing HTTP client.
+
 The board itself already scores deterministically: which components exist, how
 they are wired, whether the numbers work. That is checked in
 [`packages/core`](../tech-refresh/packages/core) and needs no model. What a
@@ -26,10 +30,10 @@ wrong verdict on a specific section — which is testable — never as a quietly
 inflated number.
 
 **Credit requires a quotation.** `SectionGrade` rejects any verdict other than
-`missing` that does not carry a verbatim span from the candidate's own text.
-This is a schema rule, not a prompt request: an ungrounded grade cannot be
-represented, so the provider response fails validation and the caller gets
-`invalid_model_response` instead of praise.
+`missing` without nonempty evidence. The live tests additionally check that the
+quote occurs verbatim in the corresponding input section. Production currently
+checks presence only; source matching remains a WIP guard, so schema-valid
+output alone does not establish that a grade is grounded.
 
 **Grading is against ground truth, not vibes.** The request carries the
 scenario's derived figures — peak requests per second, storage over the
@@ -56,30 +60,57 @@ assessment of someone by someone else without moving fact derivation
 server-side first.
 
 The service is otherwise stateless. It stores nothing: no prompts, no
-reasoning, no grades. The web app persists the returned grade through its own
-Supabase session, so RLS governs the write and this service needs no database
-access at all.
+reasoning, no grades. The planned client integration will persist the returned
+grade through its own Supabase session. That integration is not built yet;
+this service needs no database access.
 
 ## Requirements
 
 - Python 3.11
 - a Supabase project (only `/auth/v1/user` is called, to validate the caller)
-- a Google AI Studio (Gemini) API key
+- native Ollama with `grip-grader` installed (or a Gemini API key for comparison)
 
 ## Local setup
+
+From this repository, with the Ollama macOS app running:
+
+```bash
+ollama pull qwen3.5:9b
+ollama create grip-grader -f Modelfile
+curl http://localhost:11434/api/tags
+```
+
+If you already created `grip-grader`, skip the pull/create commands. The API
+supplies the full rubric and JSON schema on every request. It uses 8192 context
+tokens, 2048 output tokens, and `think=false` by default. The input character cap
+is a practical limit for short English talk tracks, not an exact tokenizer;
+keep enough context space for the rubric and output when changing these values.
+Requests run one at a time per API process; use a single Uvicorn worker on the
+16 GB M1. `OLLAMA_KEEP_ALIVE=0` unloads the model after every grade to return its
+memory to macOS. Local timeouts are not retried automatically.
 
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
 python -m pip install ".[dev]"
 cp .env.example .env
+```
+
+Fill in `SUPABASE_URL` and `SUPABASE_ANON_KEY` in `.env`. The grading endpoint
+still requires a signed-in user's bearer token; no Gemini key is needed.
+If a virtual environment is already installed, skip its creation and install.
+
+```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
 ```bash
 curl http://localhost:8000/health   # {"status":"ok"} — no config needed
-curl http://localhost:8000/ready    # names any missing secret
+curl http://localhost:8000/ready    # configuration check only
 ```
+
+`/ready` names missing configuration; it does not contact Ollama or Supabase.
+Check `/api/tags` and run the live suite below to verify actual local inference.
 
 Set `ALLOWED_ORIGINS` to the exact frontend origins that may call the API. Do
 not use `*`.
@@ -103,19 +134,27 @@ The offline suite proves the *plumbing* is honest. It cannot prove the model
 applies the rubric rather than being agreeable — only a real call can do that:
 
 ```bash
-GEMINI_API_KEY=... pytest -m live
+RUN_LIVE_AI=1 pytest -m live -s
 ```
 
-Budget those calls. The free tier allows **20 requests per day per model** and
-the live suite spends 6, so there are three runs in a day and ad-hoc debugging
-scripts come out of the same pool. A 429 here reports `retryDelay: 48s`, which
-is misleading — the daily quota does not reset for hours.
+This runs four sequential generations through the selected provider, prints
+latency and verdicts, and makes no Supabase requests or database writes. The
+ordinary suite never calls a model, even if credentials are present.
 
 `tests/test_pushover.py` sends three deliberately bad talk tracks — fluent
-hand-waving, right-shape-wrong-arithmetic, and bare placeholders — and asserts
-none of them are graded `covered`. **Run these after any prompt edit and before
-trusting a grade.** If a fixture starts passing, the rubric has gone soft and
-the feature is actively misleading.
+hand-waving, wrong arithmetic, and bare placeholders — plus a strong answer.
+Checks cover inappropriate credit, fabricated evidence, useful follow-ups and
+recognizing a good answer. **Run these after prompt, model or quantization
+changes.** Passing this small suite is an initial check, not a full calibration.
+
+To compare Gemini, set its key in `.env`, then run:
+
+```bash
+AI_PROVIDER=gemini AI_MODEL_GRADE=gemini-3.5-flash AI_MAX_OUTPUT_TOKENS=8000 RUN_LIVE_AI=1 pytest -m live -s
+```
+
+This explicitly sends the synthetic fixtures to Gemini and consumes provider
+quota. Switching providers does not automatically fall back to the cloud.
 
 ## Endpoint
 
@@ -167,6 +206,7 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `response_truncated` | 502 | Model ran out of output budget mid-answer; raise `AI_MAX_OUTPUT_TOKENS`. |
 | `provider_error` | 502 | Provider rejected the request. |
 | `provider_unavailable` | 503 | Transport failure or repeated 5xx. |
+| `model_not_found` | 503 | Ollama could not find the model; pull or create it. |
 
 ## Configuration
 
@@ -176,13 +216,18 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `ALLOWED_ORIGINS` | yes in deployment | Comma-separated exact frontend origins allowed by CORS. |
 | `SUPABASE_URL` | yes | Supabase project URL. |
 | `SUPABASE_ANON_KEY` | yes | Public anon key; authorization still comes from the caller's token. |
-| `GEMINI_API_KEY` | yes | Server-only Gemini credential. |
-| `AI_MODEL_GRADE` | no | Must support strict JSON output; rejected at startup otherwise. |
-| `AI_TIMEOUT_SECONDS` | no | Provider timeout; defaults to `30`. |
-| `AI_MAX_RETRIES` | no | Retries for transient provider failures; defaults to `1`. |
-| `AI_CONTEXT_MAX_CHARS` | no | Hard cap on serialized context; defaults to `24000`. |
-| `AI_MAX_OUTPUT_TOKENS` | no | Maximum provider output tokens; defaults to `8000`. The model's reasoning is drawn from this same budget, so it must cover thinking *and* the JSON — a value near the size of the answer alone truncates most grades. |
-| `AI_REASONING_EFFORT` | no | `low`, `medium` or `high`; defaults to `low`. Bounds the thinking budget so it cannot consume the answer. Raise it if the pushover fixtures start passing. |
+| `AI_PROVIDER` | no | `ollama` (default) or `gemini`. |
+| `OLLAMA_URL` | no | Ollama server; defaults to `http://localhost:11434`. |
+| `OLLAMA_CONTEXT_LENGTH` | no | Context tokens; defaults to `8192`. |
+| `OLLAMA_THINK` | no | Enable Qwen thinking; defaults to `false`. Re-evaluate output budget and latency if enabled. |
+| `OLLAMA_KEEP_ALIVE` | no | How long Ollama keeps the model loaded; defaults to `0`, which unloads it after each grade. |
+| `GEMINI_API_KEY` | Gemini only | Server-only Gemini credential. |
+| `AI_MODEL_GRADE` | no | Defaults to `grip-grader` for Ollama, `gemini-3.5-flash` for Gemini. Explicit names must match the selected provider. |
+| `AI_TIMEOUT_SECONDS` | no | Provider request timeout; defaults to `180` seconds, excluding local queue wait. |
+| `AI_MAX_RETRIES` | no | Gemini transient retries; defaults to `1`. Ollama never automatically retries. |
+| `AI_CONTEXT_MAX_CHARS` | no | Hard cap on serialized candidate context; defaults to `12000`. |
+| `AI_MAX_OUTPUT_TOKENS` | no | Defaults to `2048` for local non-thinking output. Set `8000` for Gemini, whose thinking shares the output budget. |
+| `AI_REASONING_EFFORT` | no | Gemini only: `low`, `medium` or `high`; defaults to `low`. |
 
 The model ids in `STRICT_GEMINI_MODELS` were copied from `ativscrum-ai-api`.
 Confirm them against the provider's current model list before deploying.
@@ -195,16 +240,16 @@ docker run --rm --env-file .env -p 8000:8000 grip-ai-api:dev
 ```
 
 Two-stage image, runs as a non-root user on port 8000.
+For Docker Desktop on the Mac, set `OLLAMA_URL=http://host.docker.internal:11434`;
+container localhost is not the host's Ollama server. Ollama must accept connections
+from Docker. Native Uvicorn is the simpler local setup and needs no binding change.
 
 ## Deployment notes
 
-Deployable on a free Koyeb instance the same way as `ativscrum-ai-api`:
-Dockerfile build, HTTP port `8000`, health check path `/health`, every runtime
-variable set as an environment variable or secret, and `ALLOWED_ORIGINS` set to
-the exact production origin.
-
-Free instances scale to zero, so the first grade after an idle period
-cold-starts. The frontend should say so rather than appear hung.
+The local Ollama setup keeps inference on the Mac. A remotely hosted API cannot
+reach it using `localhost`; it needs a reachable inference server or an explicit
+switch to Gemini. The Python image does not bundle Qwen or Ollama. Supabase
+authentication still uses the network.
 
 The Gemini API free tier may use submitted content to improve Google products
 (see [Gemini API terms](https://ai.google.dev/gemini-api/terms)). Talk-track
@@ -217,4 +262,3 @@ pointing this at anything else.
 - The `arch_boards.talk_grade` column and the web/mobile UI that calls this.
 - A content-hash cache so unchanged reasoning is not re-graded, which protects
   the free-tier daily quota and keeps a grade stable between renders.
-- No remote is configured for this repository yet.

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,30 +17,44 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     gemini_api_key: str = ""
-    # Grading is judgement work, not extraction: default to the stronger model.
-    ai_model_grade: str = "gemini-3.5-flash"
-    ai_timeout_seconds: float = 30
-    ai_max_retries: int = 1
-    ai_context_max_chars: int = 24_000
-    # Shared with the model's reasoning tokens, not just the JSON it returns.
-    # Grading a talk track was measured at up to ~1,900 reasoning tokens before
-    # ~650 tokens of answer, so 2,000 truncated most responses.
-    ai_max_output_tokens: int = 8_000
-    # The thinking budget is dynamic and grows into whatever room it is given,
-    # so the cap above is not on its own enough to keep the JSON from being cut
-    # off. This is a calibration knob, not a constant: raise it if the pushover
-    # fixtures start passing, which would mean the grader has gone lenient.
+    ai_provider: Literal["ollama", "gemini"] = "ollama"
+    ai_model_grade: str = ""
+    ollama_url: str = "http://localhost:11434"
+    ollama_context_length: int = Field(default=8192, ge=2048)
+    ollama_think: bool = False
+    ollama_keep_alive: int = Field(default=0, ge=0)
+    ai_timeout_seconds: float = Field(default=180, gt=0)
+    # Gemini only; local generation is never automatically retried.
+    ai_max_retries: int = Field(default=1, ge=0)
+    ai_context_max_chars: int = Field(default=12_000, gt=0)
+    # Local non-thinking output budget. For Gemini, use 8000: its thinking
+    # shares this budget and was observed to truncate grades at 2000.
+    ai_max_output_tokens: int = Field(default=2048, gt=0)
+    # Gemini only. Ollama uses the separate boolean OLLAMA_THINK setting.
     ai_reasoning_effort: Literal["low", "medium", "high"] = "low"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @field_validator("ai_model_grade")
-    @classmethod
-    def require_strict_gemini_model(cls, value: str) -> str:
-        if value not in STRICT_GEMINI_MODELS:
+    @model_validator(mode="after")
+    def configure_provider(self):
+        if not self.ai_model_grade.strip():
+            self.ai_model_grade = (
+                "grip-grader" if self.ai_provider == "ollama" else "gemini-3.5-flash"
+            )
+        if (
+            self.ai_provider == "gemini"
+            and self.ai_model_grade not in STRICT_GEMINI_MODELS
+        ):
             supported = ", ".join(sorted(STRICT_GEMINI_MODELS))
             raise ValueError(f"model must support Gemini strict outputs: {supported}")
-        return value
+        if self.ai_provider == "ollama":
+            if not self.ollama_url.startswith(("http://", "https://")):
+                raise ValueError("OLLAMA_URL must be an HTTP(S) URL")
+            if self.ai_max_output_tokens >= self.ollama_context_length:
+                raise ValueError(
+                    "AI_MAX_OUTPUT_TOKENS must leave room for the prompt in OLLAMA_CONTEXT_LENGTH"
+                )
+        return self
 
     @computed_field
     @property

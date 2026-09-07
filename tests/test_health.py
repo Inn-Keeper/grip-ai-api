@@ -6,14 +6,14 @@ from tests.conftest import make_client
 
 
 def test_health_needs_no_configuration():
-    client = TestClient(create_app(Settings()))
+    client = TestClient(create_app(Settings(_env_file=None)))
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
 def test_ready_reports_missing_secrets_by_name():
-    client = TestClient(create_app(Settings()))
+    client = TestClient(create_app(Settings(_env_file=None, ai_provider="gemini")))
     response = client.get("/ready")
     assert response.status_code == 503
     body = response.json()

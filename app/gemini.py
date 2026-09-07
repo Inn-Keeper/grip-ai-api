@@ -9,14 +9,14 @@ import asyncio
 import json
 import random as random_module
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 from app.errors import AppError
+from app.generation import GenerationResult
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -24,14 +24,6 @@ T = TypeVar("T", bound=BaseModel)
 GEMINI_OPENAI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 )
-
-
-@dataclass(frozen=True)
-class GeminiResult(Generic[T]):
-    value: T
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    retries: int
 
 
 class GeminiClient:
@@ -54,7 +46,7 @@ class GeminiClient:
         system_prompt: str,
         context: dict,
         output_type: type[T],
-    ) -> GeminiResult[T]:
+    ) -> GenerationResult[T]:
         serialized = json.dumps(context, separators=(",", ":"), ensure_ascii=False)
         if len(serialized) > self.settings.ai_context_max_chars:
             raise AppError(
@@ -142,7 +134,7 @@ class GeminiClient:
                 content = choice["message"]["content"]
                 value = output_type.model_validate_json(content)
                 usage = payload.get("usage") or {}
-                return GeminiResult(
+                return GenerationResult(
                     value=value,
                     prompt_tokens=self._token_count(usage.get("prompt_tokens")),
                     completion_tokens=self._token_count(usage.get("completion_tokens")),

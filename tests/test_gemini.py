@@ -20,7 +20,7 @@ from app.schemas import GradeSuggestion
 
 def gemini(handler) -> GeminiClient:
     return GeminiClient(
-        Settings(gemini_api_key="key"),
+        Settings(_env_file=None, ai_provider="gemini", gemini_api_key="key"),
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
 

@@ -10,6 +10,7 @@ from uuid import UUID
 from app.config import Settings
 from app.errors import AppError
 from app.gemini import GeminiClient
+from app.ollama import OllamaClient
 from app.prompts import SYSTEM_PROMPT, build_context
 from app.schemas import (
     SECTION_IDS,
@@ -53,11 +54,11 @@ class GradeService:
         self,
         settings: Settings,
         supabase: SupabaseGateway,
-        gemini: GeminiClient,
+        provider: GeminiClient | OllamaClient,
     ) -> None:
         self.settings = settings
         self.supabase = supabase
-        self.gemini = gemini
+        self.provider = provider
 
     async def grade(
         self,
@@ -80,7 +81,7 @@ class GradeService:
                 "Write some reasoning before asking for a grade.",
             )
 
-        result = await self.gemini.generate(
+        result = await self.provider.generate(
             self.settings.ai_model_grade,
             SYSTEM_PROMPT,
             build_context(payload.facts.model_dump(), sections, payload.self_rating),
