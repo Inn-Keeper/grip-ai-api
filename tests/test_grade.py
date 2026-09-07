@@ -17,13 +17,16 @@ REAL_ANSWER = {
 }
 
 
-def suggestion(verdicts: list[str]) -> GradeSuggestion:
+def suggestion(
+    verdicts: list[str], evidence_by_section: dict[str, str] | None = None
+) -> GradeSuggestion:
+    evidence_by_section = evidence_by_section or REAL_ANSWER
     return GradeSuggestion(
         sections=[
             SectionGrade(
                 section=section,
                 verdict=verdict,
-                evidence="" if verdict == "missing" else "quoted span",
+                evidence="" if verdict == "missing" else evidence_by_section[section],
                 gap="What about invalidation?",
             )
             for section, verdict in zip(SECTION_IDS, verdicts, strict=True)
@@ -77,6 +80,13 @@ class TestGrading:
 
 
 class TestRefusals:
+    def test_rejects_evidence_absent_from_the_submitted_section(self):
+        invented = {section: "invented quote" for section in SECTION_IDS}
+        gemini = StubGemini(suggestion(["covered"] * 6, invented))
+        response = post(make_client(gemini=gemini))
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "invalid_model_response"
+
     def test_requires_a_bearer_token(self):
         client = make_client()
         response = client.post(

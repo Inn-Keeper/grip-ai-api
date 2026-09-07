@@ -26,6 +26,18 @@ from app.supabase import SupabaseGateway
 SELF_RATING_MAX = 5
 
 
+def validate_evidence(suggestion: GradeSuggestion, sections: dict) -> None:
+    """Reject model quotations that are absent from the candidate's section."""
+    for grade in suggestion.sections:
+        evidence = grade.evidence.strip()
+        if evidence and evidence not in sections[grade.section]:
+            raise AppError(
+                502,
+                "invalid_model_response",
+                "The model quoted evidence that was not in the submitted reasoning.",
+            )
+
+
 def score_from_verdicts(suggestion: GradeSuggestion) -> int:
     """Derive the score from per-section verdicts.
 
@@ -88,6 +100,7 @@ class GradeService:
             GradeSuggestion,
         )
 
+        validate_evidence(result.value, sections)
         score = score_from_verdicts(result.value)
         return GradeResponse(
             request_id=UUID(request_id),
