@@ -9,7 +9,7 @@ dependency is required: both adapters use the existing HTTP client.
 
 The board itself already scores deterministically: which components exist, how
 they are wired, whether the numbers work. That is checked in
-[`packages/core`](../tech-refresh/packages/core) and needs no model. What a
+[`packages/core`](../grip-apps/packages/core) and needs no model. What a
 diagram cannot score is whether the reasoning behind it would survive an
 interviewer. That is what this service does.
 
