@@ -24,6 +24,7 @@ from app.gemini import GeminiClient
 from app.ollama import OllamaClient
 from app.prompts import SYSTEM_PROMPT, build_context
 from app.schemas import GradeSuggestion
+from app.service import apply_placeholder_floor, score_from_verdicts
 from tests.conftest import CATALOG_FACTS
 
 
@@ -135,8 +136,9 @@ def test_wrong_arithmetic_undermines_the_bottleneck_too(graded_cases):
 def test_placeholders_score_near_zero(graded_cases):
     result = verdicts(graded_cases["placeholders"])
     assert "covered" not in result.values()
-    thin_or_worse = sum(1 for v in result.values() if v in ("thin", "missing"))
-    assert thin_or_worse == 6
+    # Score as the service does: the model alone rated these "thin" (50/100).
+    graded = apply_placeholder_floor(graded_cases["placeholders"], PLACEHOLDERS)
+    assert score_from_verdicts(graded) == 0
 
 
 def test_every_section_gets_a_next_question(graded_cases):

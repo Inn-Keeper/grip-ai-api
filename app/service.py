@@ -25,6 +25,11 @@ from app.supabase import SupabaseGateway
 # The self-rating is 1-5; grades are percentages.
 SELF_RATING_MAX = 5
 
+# A section this short cannot answer its question: "REST", "the db".
+# ponytail: word count is a blunt proxy for "placeholder" — a terse real answer
+# of four words scores missing too. Replace with a smarter check if that bites.
+PLACEHOLDER_MAX_WORDS = 4
+
 
 def validate_evidence(suggestion: GradeSuggestion, sections: dict) -> None:
     """Reject model quotations that are absent from the candidate's section."""
@@ -36,6 +41,23 @@ def validate_evidence(suggestion: GradeSuggestion, sections: dict) -> None:
                 "invalid_model_response",
                 "The model quoted evidence that was not in the submitted reasoning.",
             )
+
+
+def apply_placeholder_floor(
+    suggestion: GradeSuggestion, sections: dict
+) -> GradeSuggestion:
+    """Grade near-empty sections "missing", whatever the model said.
+
+    The rubric already calls placeholders missing, but the local model still
+    rated them "thin" (half marks). A prompt can be ignored; a word count cannot.
+    """
+    graded = [
+        item.model_copy(update={"verdict": "missing", "evidence": ""})
+        if len(sections[item.section].split()) <= PLACEHOLDER_MAX_WORDS
+        else item
+        for item in suggestion.sections
+    ]
+    return suggestion.model_copy(update={"sections": graded})
 
 
 def score_from_verdicts(suggestion: GradeSuggestion) -> int:
@@ -101,12 +123,13 @@ class GradeService:
         )
 
         validate_evidence(result.value, sections)
-        score = score_from_verdicts(result.value)
+        suggestion = apply_placeholder_floor(result.value, sections)
+        score = score_from_verdicts(suggestion)
         return GradeResponse(
             request_id=UUID(request_id),
             model=self.settings.ai_model_grade,
             board_id=payload.board_id,
             score=score,
             divergence=divergence_from(payload.self_rating, score),
-            suggestion=result.value,
+            suggestion=suggestion,
         )

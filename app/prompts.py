@@ -40,7 +40,7 @@ WHAT EACH SECTION MUST DO
 - api: names concrete operations with their inputs and what comes back. A list
   of nouns is "thin".
 - dataModel: names entities AND a partition or primary key, and says why that
-  key. "Use Postgres" is "thin".
+  key. "We keep products in Postgres" is "thin".
 - bottleneck: names the component that fails first and what is done about it.
   Naming a bottleneck without a mitigation is "thin".
 - tradeoff: states a decision, the alternative rejected, and what would change

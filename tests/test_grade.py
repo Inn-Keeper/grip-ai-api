@@ -1,5 +1,7 @@
 """Endpoint behaviour, with the provider and Supabase stubbed."""
 
+import pytest
+
 from app.errors import AppError
 from app.schemas import SECTION_IDS, GradeSuggestion, SectionGrade
 from tests.conftest import CATALOG_FACTS, StubGemini, StubSupabase, make_client
@@ -77,6 +79,41 @@ class TestGrading:
         ground_truth = gemini.calls[0]["context"]["ground_truth"]
         assert ground_truth["derived_peak_requests_per_second"] == 16667
         assert ground_truth["derived_storage_gb"] == 1168
+
+
+PLACEHOLDERS = {
+    "requirements": "fast and reliable",
+    "scale": "lots of users",
+    "api": "REST",
+    "dataModel": "postgres",
+    "bottleneck": "the db",
+    "tradeoff": "cache vs no cache",
+}
+
+
+class TestPlaceholderFloor:
+    def test_placeholders_score_zero_even_when_the_model_calls_them_thin(self):
+        # The live grader rated exactly these "thin" (50/100); the rubric says missing.
+        gemini = StubGemini(suggestion(["thin"] * 6, PLACEHOLDERS))
+        body = post(make_client(gemini=gemini), sections=PLACEHOLDERS).json()
+        assert body["score"] == 0
+        graded = body["suggestion"]["sections"]
+        assert [item["verdict"] for item in graded] == ["missing"] * 6
+        assert [item["evidence"] for item in graded] == [""] * 6
+
+    @pytest.mark.parametrize(
+        "api_text,verdict",
+        [
+            ("GET /products/{id} returns stock", "missing"),  # four words
+            ("GET /products/{id} returns price, stock", "thin"),  # five words
+        ],
+    )
+    def test_the_floor_stops_at_four_words(self, api_text, verdict):
+        sections = {**REAL_ANSWER, "api": api_text}
+        gemini = StubGemini(suggestion(["thin"] * 6, sections))
+        body = post(make_client(gemini=gemini), sections=sections).json()
+        api = next(s for s in body["suggestion"]["sections"] if s["section"] == "api")
+        assert api["verdict"] == verdict
 
 
 class TestRefusals:

@@ -45,6 +45,10 @@ The rubric also grades by absence: every section must come back with the next
 question an interviewer would ask. "What is missing" is far harder to answer
 generously than "how good is this".
 
+**Placeholders score zero in code.** A section of four words or fewer
+("REST", "the db") is graded `missing` whatever the model says: the local model
+rated such placeholders `thin`, which is half marks.
+
 ## Trust boundary
 
 **The caller supplies the ground-truth facts.** The arithmetic that produces
