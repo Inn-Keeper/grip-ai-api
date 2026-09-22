@@ -1,0 +1,62 @@
+# Render Blueprint for grip-ai-api. Create the service with
+# Dashboard → Blueprints → New Blueprint Instance, pointed at this repo, then
+# fill the three values marked `sync: false` when it prompts.
+#
+# The free plan spins the service down after 15 minutes without traffic and
+# takes about a minute to wake. That first request of a session pays the wake;
+# the grade cache and the remembered provider rate limit start empty each time,
+# so a spent daily quota costs one request to rediscover after every sleep.
+# Neither is a correctness problem. Moving to the $7 Starter plan removes both,
+# because the instance stops sleeping.
+
+services:
+  - type: web
+    name: grip-ai-api
+    runtime: docker
+    plan: free
+    # Free-plan regions: oregon, ohio, virginia, frankfurt, singapore. Pick the
+    # one nearest your Supabase project — every grade validates the caller
+    # against it before reaching the model.
+    region: oregon
+    dockerfilePath: ./Dockerfile
+
+    # /ready checks configuration only and contacts no provider, so this costs
+    # nothing. It 503s on a missing secret, which fails the deploy instead of
+    # letting every grade fail later.
+    healthCheckPath: /ready
+
+    envVars:
+      - key: APP_ENV
+        value: production
+      # Exact origins only; the service refuses to be a wildcard. Vercel
+      # preview deployments get their own origins, so grading works only on
+      # the origins listed here.
+      - key: ALLOWED_ORIGINS
+        value: https://CHANGE-ME.vercel.app
+      # Ollama is not reachable from here; it runs on a laptop.
+      - key: AI_PROVIDER
+        value: gemini
+      - key: AI_MODEL_GRADE
+        value: gemini-3.5-flash
+      # Gemini's thinking shares the output budget; 2048 truncated grades.
+      - key: AI_MAX_OUTPUT_TOKENS
+        value: "8000"
+      - key: AI_REASONING_EFFORT
+        value: low
+      - key: AI_TIMEOUT_SECONDS
+        value: "30"
+      - key: AI_MAX_RETRIES
+        value: "1"
+      - key: AI_CONTEXT_MAX_CHARS
+        value: "24000"
+      - key: AI_GRADE_CACHE_SIZE
+        value: "256"
+
+      # sync: false keeps these out of the repo. Render prompts for them when
+      # the blueprint is created, and stores them on the service.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

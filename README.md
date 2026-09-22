@@ -287,22 +287,25 @@ from Docker. Native Uvicorn is the simpler local setup and needs no binding chan
 
 ## Deployment
 
-`./deploy.sh https://your-app.vercel.app` builds the Dockerfile and deploys it
-to Cloud Run. The script's header lists the one-time setup: enable the APIs and
-put `GEMINI_API_KEY` and `SUPABASE_ANON_KEY` in Secret Manager. Afterwards set
-`VITE_AI_URL` to the printed URL in Vercel and redeploy the web app, because
-Vite bakes that value in at build time.
+Deployed to Render from [`render.yaml`](render.yaml): Dashboard → Blueprints →
+New Blueprint Instance, pointed at this repo. It prompts for `SUPABASE_URL`,
+`SUPABASE_ANON_KEY` and `GEMINI_API_KEY`; everything else is in the file. Set
+`ALLOWED_ORIGINS` there to your exact Vercel origin first.
 
-The service scales to zero and is capped at one instance. Both are deliberate:
-an always-warm instance bills CPU around the clock and leaves Cloud Run's free
-allowance, and a second instance would keep its own grade cache and its own
-memory of the daily quota, spending a request to learn what the first already
-knows. A cold start forgets both; the cost is one wasted request to rediscover
-a spent quota, and it is why the free tier holds.
+Afterwards set `VITE_AI_URL` to the service URL in Vercel and redeploy the web
+app, because Vite bakes that value in at build time. `curl <url>/ready` names
+any configuration that is still missing.
 
-`ALLOWED_ORIGINS` must list the exact frontend origins. Vercel preview
-deployments get their own origins, so grading works only on the origins listed
-here.
+The container binds `$PORT`, which Render injects, and falls back to 8000
+locally.
+
+**What the free plan costs.** The service sleeps after 15 minutes without
+traffic and takes about a minute to wake, so the first grade of a session waits
+for the container before it waits for the model. Both in-memory stores start
+empty after a sleep: unchanged reasoning is graded again, and a spent daily
+quota costs one request to rediscover. Within a working session, where the
+caches matter most, the service stays warm. The $7 Starter plan stops the
+sleeping if that becomes annoying.
 
 The local Ollama setup keeps inference on the Mac. A remotely hosted API cannot
 reach it using `localhost`; it needs a reachable inference server or an explicit
