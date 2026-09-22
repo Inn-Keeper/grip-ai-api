@@ -6,9 +6,12 @@ class AppError(Exception):
         message: str,
         *,
         retries: int | None = None,
+        retry_after: int | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.retries = retries
+        # Seconds the client should wait before retrying; sent as Retry-After.
+        self.retry_after = retry_after

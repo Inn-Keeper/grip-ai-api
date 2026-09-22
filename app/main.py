@@ -72,6 +72,9 @@ def create_app(
                     "request_id": request.state.request_id,
                 }
             },
+            headers=(
+                {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+            ),
         )
 
     @app.get("/health")
@@ -93,6 +96,12 @@ def create_app(
                 content={"status": "not_ready", "missing": missing},
             )
         return {"status": "ready"}
+
+    # Unauthenticated on purpose: it reveals nothing about any user, and the
+    # board asks on every load. Answered from memory, so it spends no quota.
+    @app.get("/api/v1/ai/status")
+    async def grading_status(request: Request) -> dict:
+        return request.app.state.grade_service.grading_status()
 
     @app.post("/api/v1/ai/grade-talk-track", response_model=GradeResponse)
     async def grade_talk_track(

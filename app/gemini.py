@@ -8,8 +8,11 @@ caller can tell "rate limited" from "returned nonsense".
 import asyncio
 import json
 import random as random_module
+import re
 from collections.abc import Awaitable, Callable
+from datetime import datetime, time, timedelta, timezone
 from typing import TypeVar
+from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -25,6 +28,49 @@ GEMINI_OPENAI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 )
 
+# Free-tier requests-per-day quotas reset at midnight Pacific time.
+QUOTA_RESET_ZONE = ZoneInfo("America/Los_Angeles")
+RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"(\d+)')
+DEFAULT_RETRY_AFTER_SECONDS = 60
+# Failures where the request never reached Gemini, so a retry spends no quota.
+NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def seconds_until_quota_reset(now: datetime) -> int:
+    local = now.astimezone(QUOTA_RESET_ZONE)
+    midnight = datetime.combine(
+        local.date() + timedelta(days=1), time(), QUOTA_RESET_ZONE
+    )
+    # Subtract in UTC: same-zone arithmetic ignores a DST change in between.
+    remaining = midnight.astimezone(timezone.utc) - now.astimezone(timezone.utc)
+    return max(1, int(remaining.total_seconds()))
+
+
+def rate_limit_error(body: str, now: datetime, retries: int) -> AppError:
+    """Tell a spent daily quota apart from a per-minute limit.
+
+    Gemini names the exhausted quota in the 429 body, for example
+    GenerateRequestsPerDayPerProjectPerModel-FreeTier. Its retryDelay only
+    means something for per-minute limits; a daily quota returns at midnight
+    Pacific time.
+    """
+    if "PerDay" in body:
+        return AppError(
+            429,
+            "provider_quota_exhausted",
+            "Today's free Gemini quota is used up; it resets at midnight Pacific time.",
+            retries=retries,
+            retry_after=seconds_until_quota_reset(now),
+        )
+    delay = RETRY_DELAY.search(body)
+    return AppError(
+        429,
+        "provider_limited",
+        "The AI provider is rate limited.",
+        retries=retries,
+        retry_after=int(delay.group(1)) if delay else DEFAULT_RETRY_AFTER_SECONDS,
+    )
+
 
 class GeminiClient:
     def __init__(
@@ -34,10 +80,12 @@ class GeminiClient:
         http_client: httpx.AsyncClient | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         random: Callable[[], float] = random_module.random,
+        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self.settings = settings
         self.http_client = http_client
         self.sleep = sleep
+        self.clock = clock
         self.random = random
 
     async def generate(
@@ -88,20 +136,19 @@ class GeminiClient:
         while True:
             try:
                 response = await self._post(body)
-            except httpx.TransportError as exc:
+            except NOT_SENT as exc:
                 if retries >= self.settings.ai_max_retries:
                     raise self._unavailable(retries) from exc
                 await self._retry_delay(retries)
                 retries += 1
                 continue
+            except httpx.TransportError as exc:
+                # The request may have reached Gemini and been counted already.
+                # Retrying it would spend a second request out of the daily 20.
+                raise self._unavailable(retries) from exc
 
             if response.status_code == 429:
-                raise AppError(
-                    429,
-                    "provider_limited",
-                    "The AI provider is rate limited.",
-                    retries=retries,
-                )
+                raise rate_limit_error(response.text, self.clock(), retries)
             if response.status_code >= 500:
                 if retries >= self.settings.ai_max_retries:
                     raise self._unavailable(retries)

@@ -7,7 +7,7 @@ from app.schemas import GradeSuggestion, ScenarioFacts
 from app.supabase import Session
 
 
-def settings() -> Settings:
+def settings(**overrides) -> Settings:
     return Settings(
         _env_file=None,
         ai_provider="gemini",
@@ -15,6 +15,7 @@ def settings() -> Settings:
         supabase_anon_key="anon",
         gemini_api_key="key",
         allowed_origins="http://localhost:5173",
+        **overrides,
     )
 
 
@@ -75,13 +76,14 @@ def facts() -> ScenarioFacts:
     return ScenarioFacts(**CATALOG_FACTS)
 
 
-def make_client(supabase=None, gemini=None) -> TestClient:
+def make_client(supabase=None, gemini=None, clock=None, **overrides) -> TestClient:
     from app.service import GradeService
 
-    config = settings()
+    config = settings(**overrides)
     service = GradeService(
         config,
         supabase or StubSupabase(),
         gemini or StubGemini(),
+        **({"clock": clock} if clock else {}),
     )
     return TestClient(create_app(config, grade_service=service))

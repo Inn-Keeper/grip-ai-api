@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     ai_max_output_tokens: int = Field(default=2048, gt=0)
     # Gemini only. Ollama uses the separate boolean OLLAMA_THINK setting.
     ai_reasoning_effort: Literal["low", "medium", "high"] = "low"
+    # Recent grades kept in memory so unchanged reasoning is not re-graded; 0 disables.
+    ai_grade_cache_size: int = Field(default=256, ge=0)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -37,10 +37,10 @@ def suggestion(
     )
 
 
-def post(client, sections=None, self_rating=None):
+def post(client, sections=None, self_rating=None, token="token"):
     return client.post(
         "/api/v1/ai/grade-talk-track",
-        headers={"Authorization": "Bearer token"},
+        headers={"Authorization": f"Bearer {token}"},
         json={
             "board_id": BOARD_ID,
             "facts": CATALOG_FACTS,

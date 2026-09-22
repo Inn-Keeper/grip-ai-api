@@ -1,6 +1,6 @@
 # grip-ai-api
 
-Stateless FastAPI service that grades the **talk track** of a Grip Arch Board
+FastAPI service that grades the **talk track** of a Grip Arch Board
 round — the written reasoning a candidate produces alongside a system design.
 
 The default provider is **local Qwen through Ollama** (`grip-grader`). Gemini
@@ -30,10 +30,10 @@ wrong verdict on a specific section — which is testable — never as a quietly
 inflated number.
 
 **Credit requires a quotation.** `SectionGrade` rejects any verdict other than
-`missing` without nonempty evidence. The live tests additionally check that the
-quote occurs verbatim in the corresponding input section. Production currently
-checks presence only; source matching remains a WIP guard, so schema-valid
-output alone does not establish that a grade is grounded.
+`missing` without nonempty evidence, and `validate_evidence` in `service.py`
+rejects the whole response when a quote does not occur verbatim in the
+corresponding input section. A grade can therefore only be given for words the
+candidate actually wrote.
 
 **Grading is against ground truth, not vibes.** The request carries the
 scenario's derived figures — peak requests per second, storage over the
@@ -63,8 +63,9 @@ cheating. Do not reuse this service in a context where the grade is an
 assessment of someone by someone else without moving fact derivation
 server-side first.
 
-The service is otherwise stateless. It stores nothing: no prompts, no
-reasoning, no grades. The planned client integration will persist the returned
+The service stores nothing durable: no prompts, no reasoning, no grades on
+disk. It keeps recent grades in memory (see *Gemini free tier*) and forgets them
+on restart. The planned client integration will persist the returned
 grade through its own Supabase session. That integration is not built yet;
 this service needs no database access.
 
@@ -164,6 +165,15 @@ quota. Switching providers does not automatically fall back to the cloud.
 
 `POST /api/v1/ai/grade-talk-track`, bearer token required.
 
+`GET /api/v1/ai/status` says whether grading would go through, with no token and
+no provider call: `{"grading":"available"}`, or `{"grading":"unavailable",
+"code","message","retry_after"}` while a remembered limit holds. Google publishes
+no remaining-quota figure, so "available" means nothing has refused us yet, not
+that quota remains.
+
+[`docs/grade-request-path.md`](docs/grade-request-path.md) walks one request
+end to end, from the board to the stored grade.
+
 ```jsonc
 {
   "board_id": "uuid",
@@ -205,11 +215,12 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `authentication_required` | 401 | Missing or rejected bearer token. |
 | `nothing_to_grade` | 422 | Every section was blank. |
 | `context_too_large` | 413 | Reasoning exceeds `AI_CONTEXT_MAX_CHARS`. |
-| `provider_limited` | 429 | Provider rate limit — retry later. |
+| `provider_limited` | 429 | Short-term provider rate limit; `Retry-After` says when to retry. |
 | `invalid_model_response` | 502 | Model returned an ungradeable or ungrounded response. |
 | `response_truncated` | 502 | Model ran out of output budget mid-answer; raise `AI_MAX_OUTPUT_TOKENS`. |
 | `provider_error` | 502 | Provider rejected the request. |
 | `provider_unavailable` | 503 | Transport failure or repeated 5xx. |
+| `provider_quota_exhausted` | 429 | Today's free Gemini quota is spent; `Retry-After` points at midnight Pacific. |
 | `model_not_found` | 503 | Ollama could not find the model; pull or create it. |
 
 ## Configuration
@@ -232,9 +243,35 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `AI_CONTEXT_MAX_CHARS` | no | Hard cap on serialized candidate context; defaults to `12000`. |
 | `AI_MAX_OUTPUT_TOKENS` | no | Defaults to `2048` for local non-thinking output. Set `8000` for Gemini, whose thinking shares the output budget. |
 | `AI_REASONING_EFFORT` | no | Gemini only: `low`, `medium` or `high`; defaults to `low`. |
+| `AI_GRADE_CACHE_SIZE` | no | Grades kept in memory per process; defaults to `256`, `0` disables. |
 
 The model ids in `STRICT_GEMINI_MODELS` were copied from `ativscrum-ai-api`.
 Confirm them against the provider's current model list before deploying.
+
+## Gemini free tier
+
+The free tier limits requests per project and per model. At the time of writing
+a Flash model allowed 20 requests a day; check the current numbers in Google AI
+Studio. The daily count resets at midnight Pacific time.
+
+- **Identical requests are free.** A grade is cached in memory, keyed by user,
+  model, rubric and the exact reasoning and facts sent. Re-rendering a board or
+  retrying a click does not spend quota; editing any section does. Size it with
+  `AI_GRADE_CACHE_SIZE`.
+- **Only successful grades are cached.** A rate limit or a rejected response is
+  never stored, so a retry after a failure really does retry.
+- **A refusal is remembered.** The 429 is the only quota signal Google gives, so
+  the service holds on to it: until it lapses, `/api/v1/ai/status` reports the
+  block and further grade requests are refused here, without spending a request
+  to be told the same thing. A spent day returns `provider_quota_exhausted`
+  with `Retry-After` set to midnight Pacific; a per-minute limit returns
+  `provider_limited` with Google's own `retryDelay`.
+- **Only unsent requests are retried.** A connection failure is retried
+  (`AI_MAX_RETRIES`); a read timeout is not, because Google may already have
+  counted it.
+- **The cache and the remembered limit are per process.** Restarts and extra
+  workers start empty. Run one worker on the free tier.
+- **The live suite costs 4 requests** and runs only with `RUN_LIVE_AI=1`.
 
 ## Container
 
@@ -261,8 +298,15 @@ entries are personal interview-prep notes and can name target companies. That
 tradeoff was accepted deliberately for this project; re-read the terms before
 pointing this at anything else.
 
+## Callers
+
+The web Arch Board grades from the talk-track card. It needs `VITE_AI_URL`
+pointing here, and a saved board, because the request carries the board's UUID.
+The returned score is stored in `arch_boards.talk_grade` by the web app itself;
+this service still writes nothing.
+
 ## Not built yet
 
-- The `arch_boards.talk_grade` column and the web/mobile UI that calls this.
-- A content-hash cache so unchanged reasoning is not re-graded, which protects
-  the free-tier daily quota and keeps a grade stable between renders.
+- The mobile UI. Only the web board can grade today.
+- Persisting grades (`arch_boards.talk_grade` holds the score, but the verdicts
+  and follow-ups live only in the in-memory cache and are lost on restart).
