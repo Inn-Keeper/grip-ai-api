@@ -32,7 +32,7 @@ services:
       # preview deployments get their own origins, so grading works only on
       # the origins listed here.
       - key: ALLOWED_ORIGINS
-        value: https://CHANGE-ME.vercel.app
+        value: https://grip-platform-web.vercel.app
       # Ollama is not reachable from here; it runs on a laptop.
       - key: AI_PROVIDER
         value: gemini
