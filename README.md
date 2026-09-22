@@ -285,12 +285,33 @@ For Docker Desktop on the Mac, set `OLLAMA_URL=http://host.docker.internal:11434
 container localhost is not the host's Ollama server. Ollama must accept connections
 from Docker. Native Uvicorn is the simpler local setup and needs no binding change.
 
-## Deployment notes
+## Deployment
+
+`./deploy.sh https://your-app.vercel.app` builds the Dockerfile and deploys it
+to Cloud Run. The script's header lists the one-time setup: enable the APIs and
+put `GEMINI_API_KEY` and `SUPABASE_ANON_KEY` in Secret Manager. Afterwards set
+`VITE_AI_URL` to the printed URL in Vercel and redeploy the web app, because
+Vite bakes that value in at build time.
+
+The service scales to zero and is capped at one instance. Both are deliberate:
+an always-warm instance bills CPU around the clock and leaves Cloud Run's free
+allowance, and a second instance would keep its own grade cache and its own
+memory of the daily quota, spending a request to learn what the first already
+knows. A cold start forgets both; the cost is one wasted request to rediscover
+a spent quota, and it is why the free tier holds.
+
+`ALLOWED_ORIGINS` must list the exact frontend origins. Vercel preview
+deployments get their own origins, so grading works only on the origins listed
+here.
 
 The local Ollama setup keeps inference on the Mac. A remotely hosted API cannot
 reach it using `localhost`; it needs a reachable inference server or an explicit
 switch to Gemini. The Python image does not bundle Qwen or Ollama. Supabase
 authentication still uses the network.
+
+The free tier is per Google project, so a deployed instance and a laptop sharing
+one key eat each other's 20 requests a day. A second project for local
+development is the cheap fix.
 
 The Gemini API free tier may use submitted content to improve Google products
 (see [Gemini API terms](https://ai.google.dev/gemini-api/terms)). Talk-track

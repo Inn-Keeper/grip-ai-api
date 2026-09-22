@@ -1,0 +1,14 @@
+# What `gcloud run deploy --source .` must not upload. Without this file gcloud
+# derives one from .gitignore, which is close but not guaranteed; .venv alone is
+# hundreds of megabytes over a slow external drive.
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.git/
+.env
+.env.local
+._*
+docs/
+tests/
