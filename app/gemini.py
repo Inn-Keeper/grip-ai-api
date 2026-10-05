@@ -7,6 +7,7 @@ caller can tell "rate limited" from "returned nonsense".
 
 import asyncio
 import json
+import logging
 import random as random_module
 import re
 from collections.abc import Awaitable, Callable
@@ -23,6 +24,7 @@ from app.generation import GenerationResult
 
 
 T = TypeVar("T", bound=BaseModel)
+log = logging.getLogger(__name__)
 
 GEMINI_OPENAI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
@@ -137,12 +139,18 @@ class GeminiClient:
             try:
                 response = await self._post(body)
             except NOT_SENT as exc:
+                log.warning(
+                    "gemini not reached: %s (retry %d)", type(exc).__name__, retries
+                )
                 if retries >= self.settings.ai_max_retries:
                     raise self._unavailable(retries) from exc
                 await self._retry_delay(retries)
                 retries += 1
                 continue
             except httpx.TransportError as exc:
+                log.warning(
+                    "gemini transport error: %s (retry %d)", type(exc).__name__, retries
+                )
                 # The request may have reached Gemini and been counted already.
                 # Retrying it would spend a second request out of the daily 20.
                 raise self._unavailable(retries) from exc
@@ -150,6 +158,9 @@ class GeminiClient:
             if response.status_code == 429:
                 raise rate_limit_error(response.text, self.clock(), retries)
             if response.status_code >= 500:
+                log.warning(
+                    "gemini answered %d (retry %d)", response.status_code, retries
+                )
                 if retries >= self.settings.ai_max_retries:
                     raise self._unavailable(retries)
                 await self._retry_delay(retries)
