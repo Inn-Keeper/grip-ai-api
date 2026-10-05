@@ -223,6 +223,48 @@ Every error returns `{"error": {"code", "message", "request_id"}}`.
 | `provider_quota_exhausted` | 429 | Today's free Gemini quota is spent; `Retry-After` points at midnight Pacific. |
 | `model_not_found` | 503 | Ollama could not find the model; pull or create it. |
 
+## Ledger import
+
+`POST /api/v1/ai/import/parse`, bearer token required. Turns a free-form list of
+job applications into rows the Quest import screen shows for review. The web
+app saves the rows the user confirms; this service stores nothing.
+
+Request, one of:
+
+```json
+{ "text": "applied to acme for FE role, waiting" }
+{ "filename": "ledger.docx", "content_base64": "..." }
+```
+
+Only `.docx` and `.md`. The browser sends the file as base64 so no multipart
+dependency is needed, and `.docx` text is read with the standard library
+(`zipfile` + `xml.etree`).
+
+How it works (`app/ledger.py`, `app/import_service.py`):
+
+1. **Redact.** Links, emails, phone numbers and salaries become `[LINK_1]`,
+   `[EMAIL_1]` and so on before anything reaches the model. Dates are kept.
+   Names of people written in plain text are not detected.
+2. **Chunk.** Lines are numbered and split into chunks of at most 8,000
+   characters, parsed one at a time. Text over 40,000 characters is refused.
+3. **Parse.** The model returns rows that point at their source by line number,
+   which keeps its output small. Status and dates are checked in code; a row
+   with an unknown status goes to `unplaced`, an unreadable date becomes `null`.
+4. **Restore.** Placeholders are swapped back, the first link becomes `link`,
+   and `source` holds the user's original lines.
+
+Import uses the configured provider and shares grading's quota memory, so a
+spent daily quota blocks both with the same `429`. On the Gemini free tier,
+Google may use the redacted text to improve its products.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `unsupported_file` | 415 | Not a `.docx` or `.md` file. |
+| `unreadable_file` | 422 | Broken `.docx` or invalid base64. |
+| `file_too_large` | 413 | Over 1 MB, or a `.docx` that unpacks to over 10 MB. |
+| `ledger_too_long` | 413 | Over 40,000 characters of text. |
+| `nothing_to_import` | 422 | The file or text was empty. |
+
 ## Configuration
 
 | Variable | Required | Purpose |

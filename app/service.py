@@ -145,7 +145,7 @@ class GradeService:
         self._limit: AppError | None = None
         self._limited_until: datetime | None = None
 
-    def _current_limit(self) -> AppError | None:
+    def current_limit(self) -> AppError | None:
         """The live limit with its countdown refreshed, or None once it lapses."""
         if self._limit is None or self._limited_until is None:
             return None
@@ -160,14 +160,14 @@ class GradeService:
             retry_after=remaining,
         )
 
-    def _remember(self, error: AppError) -> None:
+    def remember(self, error: AppError) -> None:
         if error.status_code == 429 and error.retry_after:
             self._limit = error
             self._limited_until = self.clock() + timedelta(seconds=error.retry_after)
 
     def grading_status(self) -> dict:
         """Whether grading would go through, answered without asking Google."""
-        limit = self._current_limit()
+        limit = self.current_limit()
         if limit is None:
             return {"grading": "available"}
         return {
@@ -187,7 +187,7 @@ class GradeService:
             raise AppError(401, "authentication_required", "Authentication required.")
         session = await self.supabase.validate_session(token)
 
-        limit = self._current_limit()
+        limit = self.current_limit()
         if limit is not None:
             raise limit
 
@@ -214,7 +214,7 @@ class GradeService:
                     model, SYSTEM_PROMPT, context, GradeSuggestion
                 )
             except AppError as error:
-                self._remember(error)
+                self.remember(error)
                 raise
             validate_evidence(result.value, sections)
             suggestion = apply_placeholder_floor(result.value, sections)
