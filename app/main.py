@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, Request, Security
+from fastapi import Depends, FastAPI, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,6 +28,18 @@ from app.supabase import SupabaseGateway
 bearer = HTTPBearer(auto_error=False)
 
 
+def bearer_token(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer)],
+) -> str | None:
+    return credentials.credentials if credentials else None
+
+
+def attach_services(app: FastAPI, grade_service: GradeService) -> None:
+    app.state.grade_service = grade_service
+    app.state.import_service = ImportService(grade_service)
+    app.state.posting_service = PostingService(grade_service)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -41,24 +53,23 @@ def create_app(
             timeout=settings.ai_timeout_seconds
         ) as http_client:
             if grade_service is None:
-                app.state.grade_service = GradeService(
-                    settings,
-                    SupabaseGateway(settings, http_client=http_client),
-                    (
-                        OllamaClient
-                        if settings.ai_provider == "ollama"
-                        else GeminiClient
-                    )(settings, http_client=http_client),
+                attach_services(
+                    app,
+                    GradeService(
+                        settings,
+                        SupabaseGateway(settings, http_client=http_client),
+                        (
+                            OllamaClient
+                            if settings.ai_provider == "ollama"
+                            else GeminiClient
+                        )(settings, http_client=http_client),
+                    ),
                 )
-                app.state.import_service = ImportService(app.state.grade_service)
-                app.state.posting_service = PostingService(app.state.grade_service)
             yield
 
     app = FastAPI(lifespan=lifespan, title="grip-ai-api")
     if grade_service is not None:
-        app.state.grade_service = grade_service
-        app.state.import_service = ImportService(grade_service)
-        app.state.posting_service = PostingService(grade_service)
+        attach_services(app, grade_service)
 
     app.add_middleware(
         CORSMiddleware,
@@ -119,13 +130,11 @@ def create_app(
     async def grade_talk_track(
         payload: GradeRequest,
         request: Request,
-        credentials: Annotated[
-            HTTPAuthorizationCredentials | None, Security(bearer)
-        ] = None,
+        token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.grade_service.grade(
             payload,
-            credentials.credentials if credentials is not None else None,
+            token,
             request.state.request_id,
         )
 
@@ -133,13 +142,11 @@ def create_app(
     async def parse_ledger(
         payload: ImportRequest,
         request: Request,
-        credentials: Annotated[
-            HTTPAuthorizationCredentials | None, Security(bearer)
-        ] = None,
+        token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.import_service.parse(
             payload,
-            credentials.credentials if credentials is not None else None,
+            token,
             request.state.request_id,
         )
 
@@ -147,13 +154,11 @@ def create_app(
     async def read_postings(
         payload: PostingsRequest,
         request: Request,
-        credentials: Annotated[
-            HTTPAuthorizationCredentials | None, Security(bearer)
-        ] = None,
+        token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.posting_service.read(
             payload,
-            credentials.credentials if credentials is not None else None,
+            token,
             request.state.request_id,
         )
 
