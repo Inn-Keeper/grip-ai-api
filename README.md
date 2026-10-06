@@ -251,7 +251,8 @@ How it works (`app/ledger.py`, `app/import_service.py`):
    which keeps its output small. Status and dates are checked in code; a row
    with an unknown status goes to `unplaced`, an unreadable date becomes `null`.
 4. **Restore.** Placeholders are swapped back, the first link becomes `link`,
-   and `source` holds the user's original lines.
+   and `source` holds the user's original lines. Each row also carries up to 5
+   `must_have_techs` the lines name.
 
 Import uses the configured provider and shares grading's quota memory, so a
 spent daily quota blocks both with the same `429`. On the Gemini free tier,
@@ -264,6 +265,23 @@ Google may use the redacted text to improve its products.
 | `file_too_large` | 413 | Over 1 MB, or a `.docx` that unpacks to over 10 MB. |
 | `ledger_too_long` | 413 | Over 40,000 characters of text. |
 | `nothing_to_import` | 422 | The file or text was empty. |
+
+## Posting links
+
+`POST /api/v1/ai/import/postings`, bearer token required. Body
+`{ "urls": [...] }` (1 to 10). Returns `{ "postings": [{ url, status, text }] }`
+in order; `status` is `ok`, `blocked`, `unreachable`, `not_html`, `too_large`
+or `empty`, and `text` is the page's visible text (max 20,000 chars) when `ok`.
+The web app detects techs in it; no model is called.
+
+Guards (`app/posting_reader.py`): `https` on the default port only, no
+`user:pass@`; every resolved address must be public (not private, loopback,
+link local, reserved or multicast) and the connection is pinned to the checked
+address; at most 3 redirects, each checked again; `GET` without cookies,
+`Referer` or the user's token; 5 s per link, 3 at a time, 20 s per request;
+HTML or plain text only, cut at 1 MB. Each user may read 30 links per 10
+minutes (`429 rate_limited` with `Retry-After`). URLs and page text are never
+logged or stored; logs keep counts per status.
 
 ## Configuration
 

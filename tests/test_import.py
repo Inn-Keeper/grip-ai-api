@@ -24,6 +24,7 @@ def row(lines, name="Acme", status="Applied", **fields) -> ModelRow:
         "next_action": None,
         "next_action_date": None,
         "note": None,
+        "must_have_techs": [],
     }
     return ModelRow(**{**base, **fields})
 
@@ -91,6 +92,21 @@ class TestParse:
         assert globex["stage_date"] == "2026-09-20"
         assert globex["warnings"] == ["missing_role", "missing_next_action_date"]
         assert body["unplaced"] == ["random thought about lunch"]
+        assert acme["must_have_techs"] == []
+
+    def test_must_have_techs_are_trimmed_deduped_and_capped(self):
+        techs = [" React ", "react", "", "TypeScript", "Node.js", "AWS", "Docker", "Go"]
+        provider = SequenceProvider(
+            ModelLedger(rows=[row([1, 2, 3], must_have_techs=techs)], unplaced=[])
+        )
+        response = post(make_client(gemini=provider), {"text": TEXT})
+        assert response.json()["rows"][0]["must_have_techs"] == [
+            "React",
+            "TypeScript",
+            "Node.js",
+            "AWS",
+            "Docker",
+        ]
 
     def test_provider_sees_only_redacted_numbered_text(self):
         provider = SequenceProvider(ModelLedger(rows=[], unplaced=[]))

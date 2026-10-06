@@ -7,7 +7,7 @@ points at its source by line number, which keeps its output small and lets the
 response show the user's own words rather than the redacted ones.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,7 @@ class ModelRow(StrictModel):
     next_action: str | None
     next_action_date: str | None
     note: str | None
+    must_have_techs: list[str]
 
 
 class ModelLedger(StrictModel):
@@ -61,6 +62,7 @@ class ImportRow(BaseModel):
     next_action_date: str | None
     link: str | None
     note: str | None
+    must_have_techs: list[str]
     source: str
     warnings: list[str]
 
@@ -68,3 +70,24 @@ class ImportRow(BaseModel):
 class ImportResponse(BaseModel):
     rows: list[ImportRow]
     unplaced: list[str]
+
+
+PostingStatus = Literal[
+    "ok", "blocked", "unreachable", "not_html", "too_large", "empty"
+]
+
+
+class PostingsRequest(StrictModel):
+    urls: list[Annotated[str, Field(max_length=2048)]] = Field(
+        min_length=1, max_length=10
+    )
+
+
+class PostingResult(BaseModel):
+    url: str
+    status: PostingStatus
+    text: str | None
+
+
+class PostingsResponse(BaseModel):
+    postings: list[PostingResult]

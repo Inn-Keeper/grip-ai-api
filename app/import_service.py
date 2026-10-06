@@ -29,6 +29,18 @@ STAGES = {"Contacted", "Applied", "Interviewing", "Offer", "Rejected"}
 # Reached on the application or first-contact date itself; later stages need their own date.
 DATED_BY_APPLICATION = {"Contacted", "Applied"}
 LINK = re.compile(r"\[LINK_\d+\]")
+# The prep plan drills the top 5 posting techs.
+MAX_TECHS = 5
+
+
+def techs(values: list[str]) -> list[str]:
+    """Trimmed, case-insensitively deduped, capped at MAX_TECHS."""
+    seen: dict[str, str] = {}
+    for value in values:
+        tech = value.strip()
+        if tech and not LINK.search(tech):
+            seen.setdefault(tech.lower(), tech)
+    return list(seen.values())[:MAX_TECHS]
 
 
 def iso_or_none(value: str | None) -> str | None:
@@ -161,6 +173,7 @@ class ImportService:
             next_action_date=next_action_date,
             link=mapping.get(links[0]) if links else None,
             note=restore(row.note, mapping) if row.note else None,
+            must_have_techs=techs(row.must_have_techs),
             source="\n".join(lines[n - 1] for n in numbers),
             warnings=warnings,
         )

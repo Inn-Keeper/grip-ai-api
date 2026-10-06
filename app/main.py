@@ -11,8 +11,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import Settings
 from app.errors import AppError
 from app.gemini import GeminiClient
-from app.import_schemas import ImportRequest, ImportResponse
+from app.import_schemas import (
+    ImportRequest,
+    ImportResponse,
+    PostingsRequest,
+    PostingsResponse,
+)
 from app.import_service import ImportService
+from app.posting_service import PostingService
 from app.ollama import OllamaClient
 from app.schemas import GradeRequest, GradeResponse
 from app.service import GradeService
@@ -45,12 +51,14 @@ def create_app(
                     )(settings, http_client=http_client),
                 )
                 app.state.import_service = ImportService(app.state.grade_service)
+                app.state.posting_service = PostingService(app.state.grade_service)
             yield
 
     app = FastAPI(lifespan=lifespan, title="grip-ai-api")
     if grade_service is not None:
         app.state.grade_service = grade_service
         app.state.import_service = ImportService(grade_service)
+        app.state.posting_service = PostingService(grade_service)
 
     app.add_middleware(
         CORSMiddleware,
@@ -130,6 +138,20 @@ def create_app(
         ] = None,
     ):
         return await request.app.state.import_service.parse(
+            payload,
+            credentials.credentials if credentials is not None else None,
+            request.state.request_id,
+        )
+
+    @app.post("/api/v1/ai/import/postings", response_model=PostingsResponse)
+    async def read_postings(
+        payload: PostingsRequest,
+        request: Request,
+        credentials: Annotated[
+            HTTPAuthorizationCredentials | None, Security(bearer)
+        ] = None,
+    ):
+        return await request.app.state.posting_service.read(
             payload,
             credentials.credentials if credentials is not None else None,
             request.state.request_id,

@@ -26,6 +26,11 @@ One row per application (one company, or one company and role). For each row:
 - next_action: the next thing they plan to do, short, or null.
 - next_action_date: when, or null.
 - note: anything else worth keeping, short, or null.
+- must_have_techs: the required technologies the lines name for this job
+  (languages, frameworks, databases, cloud, tools), most important first, at
+  most 5. Use each tech's common name ("React", "PostgreSQL"). Include techs
+  named anywhere in the lines, the job title too ("Senior React Engineer" ->
+  React). Never guess a stack the text does not name. Empty list if none.
 
 DATES
 Return ISO dates (YYYY-MM-DD). Resolve relative dates ("next Tuesday",
