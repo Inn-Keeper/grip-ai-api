@@ -37,13 +37,22 @@ def suggestion(
     )
 
 
-def post(client, sections=None, self_rating=None, token="token"):
+# A free board: the user's own brief, no scenario figures.
+NO_FIGURES = {
+    "scenario_id": "free",
+    "name": "Free board",
+    "brief": "A URL shortener for an internal tool.",
+    "node_types": ["service", "sql"],
+}
+
+
+def post(client, sections=None, self_rating=None, token="token", facts=None):
     return client.post(
         "/api/v1/ai/grade-talk-track",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "board_id": BOARD_ID,
-            "facts": CATALOG_FACTS,
+            "facts": facts or CATALOG_FACTS,
             "sections": sections if sections is not None else REAL_ANSWER,
             "self_rating": self_rating,
         },
@@ -79,6 +88,13 @@ class TestGrading:
         ground_truth = gemini.calls[0]["context"]["ground_truth"]
         assert ground_truth["derived_peak_requests_per_second"] == 16667
         assert ground_truth["derived_storage_gb"] == 1168
+
+    def test_a_board_without_figures_sends_no_ground_truth(self):
+        # Free boards and custom scenarios give no numbers; zeros would make
+        # every honest estimate look wrong, so the block is left out instead.
+        gemini = StubGemini(suggestion(["thin"] * 6))
+        post(make_client(gemini=gemini), facts=NO_FIGURES)
+        assert gemini.calls[0]["context"]["ground_truth"] is None
 
 
 PLACEHOLDERS = {

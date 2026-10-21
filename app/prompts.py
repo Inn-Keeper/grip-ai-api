@@ -22,6 +22,9 @@ The PROJECT_DATA block contains figures derived from the scenario's own
 parameters. They are correct. When the candidate states a number, compare it to
 these. An estimate is acceptable within one order of magnitude of the derived
 value; beyond that it is wrong no matter how confidently it is written.
+When ground_truth is null the scenario gives no figures. Then judge the scale
+section on whether its arithmetic follows from the candidate's own stated
+assumptions, and never call a number wrong for lacking a reference.
 
 VERDICTS
 - "covered": the section answers the question and survives one obvious
@@ -65,6 +68,19 @@ Return only the required JSON.\
 """
 
 
+def _ground_truth(facts: dict) -> dict | None:
+    """The scenario's figures, or None when it gives none (see ScenarioFacts)."""
+    if facts.get("peak_qps") is None:
+        return None
+    return {
+        "daily_active_users": facts["dau"],
+        "payload_kb_per_write": facts["payload_kb"],
+        "retention_days": facts["retention_days"],
+        "derived_peak_requests_per_second": round(facts["peak_qps"]),
+        "derived_storage_gb": round(facts["storage_gb"] or 0),
+    }
+
+
 def build_context(facts: dict, sections: dict, self_rating: int | None) -> dict:
     """Assemble the model-facing payload.
 
@@ -77,13 +93,7 @@ def build_context(facts: dict, sections: dict, self_rating: int | None) -> dict:
             "name": facts["name"],
             "brief": facts["brief"],
         },
-        "ground_truth": {
-            "daily_active_users": facts["dau"],
-            "payload_kb_per_write": facts["payload_kb"],
-            "retention_days": facts["retention_days"],
-            "derived_peak_requests_per_second": round(facts["peak_qps"]),
-            "derived_storage_gb": round(facts["storage_gb"]),
-        },
+        "ground_truth": _ground_truth(facts),
         "board": {
             "components_drawn": facts["node_types"],
             "partition_keys_declared": facts["partition_keys"],

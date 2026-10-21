@@ -40,6 +40,9 @@ scenario's derived figures — peak requests per second, storage over the
 retention window, which design checks passed, which partition keys were
 declared. The rubric asks the model to compare the candidate's arithmetic to
 those numbers rather than to judge whether it "looks right".
+A scenario with no figures (a free board, a custom scenario) leaves the five
+numbers out; the model then checks the arithmetic against the candidate's own
+stated assumptions instead of against zeros.
 
 The rubric also grades by absence: every section must come back with the next
 question an interviewer would ask. "What is missing" is far harder to answer
@@ -185,7 +188,7 @@ end to end, from the board to the stored grade.
     "payload_kb": 4,
     "retention_days": 1825,
     "peak_qps": 16666.7,          // derived in packages/core
-    "storage_gb": 1168,           // derived in packages/core
+    "storage_gb": 1168,           // derived in packages/core; all five figures are optional
     "checks_passed": ["..."],
     "checks_failed": ["..."],
     "node_types": ["client", "cdn", "service", "sql"],

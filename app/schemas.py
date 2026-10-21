@@ -61,11 +61,13 @@ class ScenarioFacts(StrictModel):
     scenario_id: str = Field(min_length=1, max_length=120)
     name: ShortText
     brief: str = Field(min_length=1, max_length=2_000)
-    dau: int = Field(ge=0)
-    payload_kb: float = Field(ge=0)
-    retention_days: int = Field(ge=0)
-    peak_qps: float = Field(ge=0)
-    storage_gb: float = Field(ge=0)
+    # None when the scenario gives no figures (a free board, a custom scenario):
+    # the grader then checks the candidate's own arithmetic instead of comparing.
+    dau: int | None = Field(default=None, ge=0)
+    payload_kb: float | None = Field(default=None, ge=0)
+    retention_days: int | None = Field(default=None, ge=0)
+    peak_qps: float | None = Field(default=None, ge=0)
+    storage_gb: float | None = Field(default=None, ge=0)
     checks_passed: list[ShortText] = Field(default_factory=list, max_length=40)
     checks_failed: list[ShortText] = Field(default_factory=list, max_length=40)
     node_types: list[str] = Field(default_factory=list, max_length=40)
