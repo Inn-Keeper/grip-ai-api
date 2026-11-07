@@ -19,6 +19,8 @@ services:
     # against it before reaching the model.
     region: oregon
     dockerfilePath: ./Dockerfile
+    # Deploy a push to main only after its GitHub CI checks pass.
+    autoDeployTrigger: checksPass
 
     # /ready checks configuration only and contacts no provider, so this costs
     # nothing. It 503s on a missing secret, which fails the deploy instead of
