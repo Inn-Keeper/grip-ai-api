@@ -6,7 +6,7 @@ import zipfile
 import pytest
 
 from app.errors import AppError
-from app.ledger import extract_text, redact, restore, split_chunks
+from app.ledger import extract_text, redact, restore, numbered_chunks
 
 
 def docx_bytes(paragraphs: list[str]) -> bytes:
@@ -96,13 +96,33 @@ class TestRedact:
 class TestChunks:
     def test_lines_are_kept_whole_and_once(self):
         lines = [f"entry {i} " + "x" * 30 for i in range(100)]
-        chunks = split_chunks("\n".join(lines), limit=200)
-        assert all(len(chunk) <= 200 for chunk in chunks)
-        assert "\n".join(chunks).split("\n") == lines
+        chunks = numbered_chunks(lines, limit=200)
+        assert all(len(text) <= 200 for text, _ in chunks)
+        assert "\n".join(text for text, _ in chunks).splitlines() == [
+            f"{n}: {line}" for n, line in enumerate(lines, 1)
+        ]
+        assert set().union(*(ids for _, ids in chunks)) == set(range(1, 101))
 
     def test_short_text_is_one_chunk(self):
-        assert split_chunks("a\nb", limit=200) == ["a\nb"]
+        assert numbered_chunks(["a", "b"], limit=200) == [("1: a\n2: b", {1, 2})]
 
-    def test_a_line_longer_than_the_limit_is_cut(self):
-        chunks = split_chunks("y" * 450, limit=200)
-        assert [len(chunk) for chunk in chunks] == [200, 200, 50]
+    def test_long_line_is_refused(self):
+        with pytest.raises(AppError) as error:
+            numbered_chunks(["y" * 450], limit=200)
+        assert error.value.code == "import_line_too_long"
+
+
+def test_redaction_preserves_line_identity_for_adjacent_numbers():
+    text = "12345678\n98765432\n$\n140000"
+    clean, mapping = redact(text)
+    assert len(clean.splitlines()) == len(text.splitlines())
+    assert restore(clean, mapping) == text
+
+
+@pytest.mark.parametrize("space", ["\u00a0", "\u202f", "\u2009"])
+def test_phone_redaction_handles_unicode_horizontal_spaces(space):
+    phone = space.join(["+46", "70", "123", "45", "67"])
+    text = f"Call {phone} about the application"
+    clean, mapping = redact(text)
+    assert clean == "Call [PHONE_1] about the application"
+    assert restore(clean, mapping) == text

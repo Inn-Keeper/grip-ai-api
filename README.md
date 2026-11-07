@@ -48,9 +48,12 @@ The rubric also grades by absence: every section must come back with the next
 question an interviewer would ask. "What is missing" is far harder to answer
 generously than "how good is this".
 
-**Placeholders score zero in code.** A section of four words or fewer
+**Placeholders score zero in code.** A section of four whitespace-separated words or fewer
 ("REST", "the db") is graded `missing` whatever the model says: the local model
-rated such placeholders `thin`, which is half marks.
+rated such placeholders `thin`, which is half marks. This also rejects terse
+meaningful answers: it is a known heuristic, not proof that the reasoning is
+absent. The rubric targets senior-level practice; language parity and grading
+accuracy have not been established. [Calibration procedure](docs/grading-calibration.md).
 
 ## Trust boundary
 
@@ -68,9 +71,10 @@ server-side first.
 
 The service stores nothing durable: no prompts, no reasoning, no grades on
 disk. It keeps recent grades in memory (see *Gemini free tier*) and forgets them
-on restart. The planned client integration will persist the returned
-grade through its own Supabase session. That integration is not built yet;
-this service needs no database access.
+on restart. The web and mobile clients persist the returned score and its
+detailed verdicts, evidence and follow-up through their own Supabase session
+(`arch_boards.talk_grade` and `talk_assessment`). Public share links never
+return the detailed feedback. This service needs no database-row access.
 
 ## Requirements
 
@@ -94,7 +98,10 @@ tokens, 2048 output tokens, and `think=false` by default. The input character ca
 is a practical limit for short English talk tracks, not an exact tokenizer;
 keep enough context space for the rubric and output when changing these values.
 Requests run one at a time per API process; use a single Uvicorn worker on the
-16 GB M1. `OLLAMA_KEEP_ALIVE=0` unloads the model after every grade to return its
+16 GB M1. Waiting for that slot is capped by `OLLAMA_QUEUE_TIMEOUT_SECONDS`
+(default 5 seconds); a busy slot returns `503 provider_busy` and `Retry-After: 5`.
+The generation timeout starts after the slot is acquired, so the queue cap is
+not a total request deadline. `OLLAMA_KEEP_ALIVE=0` unloads the model after every grade to return its
 memory to macOS. Local timeouts are not retried automatically.
 
 ```bash
@@ -201,6 +208,9 @@ end to end, from the board to the stored grade.
 }
 ```
 
+For a complete synthetic example and safe first-success procedure, see
+[first-grade.md](docs/first-grade.md).
+
 Returns a computed `score`, a `divergence` (how many points the candidate
 over-rated themselves, positive when overconfident), and per-section verdicts
 with quoted evidence and the next question.
@@ -211,10 +221,15 @@ caller's job.
 
 ### Errors
 
-Every error returns `{"error": {"code", "message", "request_id"}}`.
+Application and request-validation errors return
+`{"error": {"code", "message", "request_id"}}`. Validation errors may also include
+`validation_types`, never submitted values or dictionary keys. Unexpected server
+failures are not converted into input errors.
 
 | Code | Status | Meaning |
 | --- | --- | --- |
+| `invalid_request` | 422 | Check required fields, types and schema length limits; correct the input rather than retrying unchanged. |
+| `provider_busy` | 503 | Local generation slot is busy; wait for `Retry-After`, then retry. |
 | `authentication_required` | 401 | Missing or rejected bearer token. |
 | `nothing_to_grade` | 422 | Every section was blank. |
 | `context_too_large` | 413 | Reasoning exceeds `AI_CONTEXT_MAX_CHARS`. |
@@ -257,6 +272,17 @@ How it works (`app/ledger.py`, `app/import_service.py`):
    and `source` holds the user's original lines. Each row also carries up to 5
    `must_have_techs` the lines name.
 
+Every nonblank source line appears in an accepted row or `unplaced`, including
+lines the model omits. Rows with invalid or conflicting source references are
+withheld for review. Numbered lines stay whole within an 8,000-character chunk;
+split a longer paragraph before importing.
+
+Parsing is all-or-nothing: a later chunk failure returns an error and no earlier
+results. Keep the original input and retry the full import; completed chunks may
+be generated again. The API saves no rows. Multi-chunk requests can take several
+generation timeouts; there is no total import deadline or resumable job. Cancelling
+a browser request does not prove an already-sent generation stopped.
+
 Import uses the configured provider and shares grading's quota memory, so a
 spent daily quota blocks both with the same `429`. On the Gemini free tier,
 Google may use the redacted text to improve its products.
@@ -267,6 +293,7 @@ Google may use the redacted text to improve its products.
 | `unreadable_file` | 422 | Broken `.docx` or invalid base64. |
 | `file_too_large` | 413 | Over 1 MB, or a `.docx` that unpacks to over 10 MB. |
 | `ledger_too_long` | 413 | Over 40,000 characters of text. |
+| `import_line_too_long` | 413 | One numbered paragraph exceeds the 8,000-character chunk budget; split it into shorter lines. |
 | `nothing_to_import` | 422 | The file or text was empty. |
 
 ## Posting links
@@ -296,6 +323,7 @@ logged or stored; logs keep counts per status.
 | `SUPABASE_ANON_KEY` | yes | Public anon key; authorization still comes from the caller's token. |
 | `AI_PROVIDER` | no | `ollama` (default) or `gemini`. |
 | `OLLAMA_URL` | no | Ollama server; defaults to `http://localhost:11434`. |
+| `OLLAMA_QUEUE_TIMEOUT_SECONDS` | no | Maximum wait for the local generation slot; defaults to `5`, then returns `provider_busy`. |
 | `OLLAMA_CONTEXT_LENGTH` | no | Context tokens; defaults to `8192`. |
 | `OLLAMA_THINK` | no | Enable Qwen thinking; defaults to `false`. Re-evaluate output budget and latency if enabled. |
 | `OLLAMA_KEEP_ALIVE` | no | How long Ollama keeps the model loaded; defaults to `0`, which unloads it after each grade. |
@@ -321,11 +349,15 @@ Studio. The daily count resets at midnight Pacific time.
   model, rubric and the exact reasoning and facts sent. Re-rendering a board or
   retrying a click does not spend quota; editing any section does. Size it with
   `AI_GRADE_CACHE_SIZE`.
+- **Cached grades survive a remembered limit.** Authenticated, valid requests for
+  cached feedback still return it without inference. `/status` describes new
+  generation availability, not whether a particular answer is cached. The current
+  Grip UI may disable Grade during a limit; exposing cached retries is client work.
 - **Only successful grades are cached.** A rate limit or a rejected response is
   never stored, so a retry after a failure really does retry.
 - **A refusal is remembered.** The 429 is the only quota signal Google gives, so
   the service holds on to it: until it lapses, `/api/v1/ai/status` reports the
-  block and further grade requests are refused here, without spending a request
+  block and uncached grade requests are refused here, without spending a request
   to be told the same thing. A spent day returns `provider_quota_exhausted`
   with `Retry-After` set to midnight Pacific; a per-minute limit returns
   `provider_limited` with Google's own `retryDelay`.
@@ -367,8 +399,8 @@ traffic and takes about a minute to wake, so the first grade of a session waits
 for the container before it waits for the model. Both in-memory stores start
 empty after a sleep: unchanged reasoning is graded again, and a spent daily
 quota costs one request to rediscover. Within a working session, where the
-caches matter most, the service stays warm. The $7 Starter plan stops the
-sleeping if that becomes annoying.
+caches matter most, the service stays warm. A paid always-on plan can avoid idle suspension; verify current hosting terms
+before choosing one.
 
 The local Ollama setup keeps inference on the Mac. A remotely hosted API cannot
 reach it using `localhost`; it needs a reachable inference server or an explicit
@@ -376,7 +408,7 @@ switch to Gemini. The Python image does not bundle Qwen or Ollama. Supabase
 authentication still uses the network.
 
 The free tier is per Google project, so a deployed instance and a laptop sharing
-one key eat each other's 20 requests a day. A second project for local
+one key consume the same project quota (the historical example above was 20/day). A second project for local
 development is the cheap fix.
 
 The Gemini API free tier may use submitted content to improve Google products
@@ -387,13 +419,17 @@ pointing this at anything else.
 
 ## Callers
 
-The web Arch Board grades from the talk-track card. It needs `VITE_AI_URL`
+Web and mobile Arch Board integrate grading from the talk-track UI. The web app needs `VITE_AI_URL`
 pointing here, and a saved board, because the request carries the board's UUID.
-The returned score is stored in `arch_boards.talk_grade` by the web app itself;
-this service still writes nothing.
+The clients store the returned score in `arch_boards.talk_grade` and the full
+response, with a fingerprint of the graded inputs, in `arch_boards.talk_assessment`.
+They show that feedback again only while the board still matches those inputs.
+This service still writes nothing.
 
 ## Not built yet
 
-- The mobile UI. Only the web board can grade today.
-- Persisting grades (`arch_boards.talk_grade` holds the score, but the verdicts
-  and follow-ups live only in the in-memory cache and are lost on restart).
+- Assessment history: a board keeps only its latest grade and feedback.
+- Client-specific busy messaging and explicit cached retries while `/status`
+  reports a limit. Those require a separate `grip-apps` change.
+- Calibrated grading across scenarios and languages. See
+  [grading-calibration.md](docs/grading-calibration.md).

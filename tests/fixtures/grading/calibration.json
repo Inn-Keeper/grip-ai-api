@@ -1,0 +1,98 @@
+[
+  {
+    "id": "en-concise",
+    "language": "en",
+    "section": "bottleneck",
+    "text": "Reads overwhelm SQL; cache.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "en-verbose_empty",
+    "language": "en",
+    "section": "bottleneck",
+    "text": "We use a robust scalable modern solution following all industry best practices.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "en-wrong_arithmetic",
+    "language": "en",
+    "section": "scale",
+    "text": "Eight million users times sixty reads per day gives fifty requests per second at peak.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "en-specific",
+    "language": "en",
+    "section": "bottleneck",
+    "text": "SQL reads bottleneck at 16667 requests per second. Use Redis cache-aside with a sixty-second TTL, coalesce cache misses and load-test database fallback.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "pt-concise",
+    "language": "pt",
+    "section": "bottleneck",
+    "text": "Leituras sobrecarregam SQL; cache.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "pt-verbose_empty",
+    "language": "pt",
+    "section": "bottleneck",
+    "text": "Usamos uma solução moderna robusta e escalável seguindo todas as melhores práticas do setor.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "pt-wrong_arithmetic",
+    "language": "pt",
+    "section": "scale",
+    "text": "Oito milhões de usuários vezes sessenta leituras por dia resultam em cinquenta requisições por segundo no pico.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "pt-specific",
+    "language": "pt",
+    "section": "bottleneck",
+    "text": "As leituras SQL são o gargalo a 16667 requisições por segundo. Use Redis cache-aside com TTL de sessenta segundos, agrupe falhas de cache e teste a carga na alternativa de acesso ao banco.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "sv-concise",
+    "language": "sv",
+    "section": "bottleneck",
+    "text": "Läsningar överbelastar SQL; cache.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "sv-verbose_empty",
+    "language": "sv",
+    "section": "bottleneck",
+    "text": "Vi använder en robust skalbar modern lösning som följer alla branschens bästa praxis.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "sv-wrong_arithmetic",
+    "language": "sv",
+    "section": "scale",
+    "text": "Åtta miljoner användare gånger sextio läsningar per dag ger femtio förfrågningar per sekund vid toppbelastning.",
+    "human_review": "pending",
+    "expected_verdict": null
+  },
+  {
+    "id": "sv-specific",
+    "language": "sv",
+    "section": "bottleneck",
+    "text": "SQL-läsningar blir flaskhalsen vid 16667 förfrågningar per sekund. Använd Redis cache-aside med sextio sekunders TTL, samordna cachemissar och belastningstesta databasens reservväg.",
+    "human_review": "pending",
+    "expected_verdict": null
+  }
+]

@@ -120,7 +120,10 @@ class TestPlaceholderFloor:
     @pytest.mark.parametrize(
         "api_text,verdict",
         [
-            ("GET /products/{id} returns stock", "missing"),  # four words
+            ("GET /products/{id} returns stock", "missing"),
+            ("  Reads\t overwhelm SQL; cache.  ", "missing"),
+            ("Läsningar överbelastar SQL; använd cache.", "thin"),
+            ("Leituras sobrecarregam SQL; usar cache.", "thin"),  # five words
             ("GET /products/{id} returns price, stock", "thin"),  # five words
         ],
     )

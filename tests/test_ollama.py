@@ -211,3 +211,78 @@ def test_lifespan_wires_ollama_into_authenticated_grading(monkeypatch):
     assert result.json()["model"] == "grip-grader"
     assert result.json()["score"] == 50
     assert calls == ["/auth/v1/user", "/api/chat"]
+
+
+async def test_waiting_generation_times_out_without_sending_and_lock_recovers():
+    from app.ollama import OllamaClient
+
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return httpx.Response(200, json=response_payload())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OllamaClient(
+            config(ollama_queue_timeout_seconds=0.01), http_client=http
+        )
+        first = asyncio.create_task(
+            client.generate("grip-grader", "rubric", {}, GradeSuggestion)
+        )
+        await asyncio.wait_for(started.wait(), 1)
+        try:
+            with pytest.raises(AppError) as error:
+                await asyncio.wait_for(
+                    client.generate("grip-grader", "rubric", {}, GradeSuggestion), 0.5
+                )
+            assert error.value.code == "provider_busy"
+            assert error.value.retry_after == 5
+            assert calls == 1
+        finally:
+            release.set()
+            await first
+        await client.generate("grip-grader", "rubric", {}, GradeSuggestion)
+        assert calls == 2
+
+
+async def test_cancelled_waiter_never_sends_or_releases_active_lock():
+    from app.ollama import OllamaClient
+
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return httpx.Response(200, json=response_payload())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OllamaClient(
+            config(ollama_queue_timeout_seconds=0.01), http_client=http
+        )
+        first = asyncio.create_task(
+            client.generate("grip-grader", "rubric", {}, GradeSuggestion)
+        )
+        await asyncio.wait_for(started.wait(), 1)
+        waiter = asyncio.create_task(
+            client.generate("grip-grader", "rubric", {}, GradeSuggestion)
+        )
+        await asyncio.sleep(0)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        try:
+            with pytest.raises(AppError, match="busy"):
+                await asyncio.wait_for(
+                    client.generate("grip-grader", "rubric", {}, GradeSuggestion), 0.5
+                )
+            assert calls == 1
+        finally:
+            release.set()
+            await first

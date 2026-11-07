@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ai_model_grade: str = ""
     ollama_url: str = "http://localhost:11434"
     ollama_context_length: int = Field(default=8192, ge=2048)
+    ollama_queue_timeout_seconds: float = Field(default=5, gt=0)
     ollama_think: bool = False
     ollama_keep_alive: int = Field(default=0, ge=0)
     ai_timeout_seconds: float = Field(default=180, gt=0)

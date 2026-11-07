@@ -5,6 +5,7 @@ import base64
 import binascii
 import logging
 import re
+from collections import Counter
 from datetime import date
 
 from app.errors import AppError
@@ -16,7 +17,7 @@ from app.import_schemas import (
     ModelLedger,
     ModelRow,
 )
-from app.ledger import extract_text, redact, restore, split_chunks
+from app.ledger import extract_text, redact, restore, numbered_chunks
 from app.service import GradeService
 
 log = logging.getLogger(__name__)
@@ -71,24 +72,39 @@ class ImportService:
             )
 
         clean, mapping = redact("\n".join(lines))
-        numbered = "\n".join(
-            f"{n}: {line}" for n, line in enumerate(clean.split("\n"), 1)
-        )
         redacted_lines = clean.split("\n")
-        chunks = split_chunks(numbered, CHUNK_CHARS)
-
-        rows: list[ImportRow] = []
-        unplaced: list[int] = []
+        chunks = numbered_chunks(redacted_lines, CHUNK_CHARS)
+        candidates: list[tuple[ImportRow, set[int]]] = []
         today = self.grading.clock().date().isoformat()
-        for chunk in chunks:
-            ledger = await self._generate({"today": today, "ledger": chunk})
+        for chunk, allowed in chunks:
+            try:
+                ledger = await self._generate({"today": today, "ledger": chunk})
+            except AppError as error:
+                raise AppError(
+                    error.status_code,
+                    error.code,
+                    f"{error.message} No import results were returned. Keep your input and retry the full import.",
+                    retries=error.retries,
+                    retry_after=error.retry_after,
+                ) from error
             for model_row in ledger.rows:
+                numbers = set(model_row.lines)
+                if not numbers or not numbers <= allowed:
+                    continue
                 row = self._row(model_row, lines, redacted_lines, mapping)
-                if row is None:
-                    unplaced.extend(model_row.lines)
-                else:
-                    rows.append(row)
-            unplaced.extend(ledger.unplaced)
+                if row is not None:
+                    candidates.append((row, numbers))
+
+        # Conflicting attribution is not safe to import as separate applications.
+        uses = Counter(number for _, numbers in candidates for number in numbers)
+        accepted = [
+            (row, numbers)
+            for row, numbers in candidates
+            if all(uses[n] == 1 for n in numbers)
+        ]
+        rows = [row for row, _ in accepted]
+        covered = set().union(*(numbers for _, numbers in accepted))
+        unplaced = [n for n in range(1, len(lines) + 1) if n not in covered]
 
         log.info(
             "import %s: chunks=%d rows=%d unplaced=%d",

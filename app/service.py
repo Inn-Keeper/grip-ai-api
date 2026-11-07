@@ -187,10 +187,6 @@ class GradeService:
             raise AppError(401, "authentication_required", "Authentication required.")
         session = await self.supabase.validate_session(token)
 
-        limit = self.current_limit()
-        if limit is not None:
-            raise limit
-
         sections = {
             section_id: payload.sections.get(section_id, "")
             for section_id in SECTION_IDS
@@ -206,9 +202,19 @@ class GradeService:
         context = build_context(
             payload.facts.model_dump(), sections, payload.self_rating
         )
+        serialized = json.dumps(context, separators=(",", ":"), ensure_ascii=False)
+        if len(serialized) > self.settings.ai_context_max_chars:
+            raise AppError(
+                413,
+                "context_too_large",
+                "The submitted reasoning is too long to grade.",
+            )
         key = grade_cache_key(session.user_id, model, context)
         suggestion = self.cache.get(key)
         if suggestion is None:
+            limit = self.current_limit()
+            if limit is not None:
+                raise limit
             try:
                 result = await self.provider.generate(
                     model, SYSTEM_PROMPT, context, GradeSuggestion

@@ -6,7 +6,8 @@ nothing on disk. It does hold two things in memory: recent grades, so unchanged
 reasoning is not re-graded, and the last provider rate limit, so a spent quota
 is refused here instead of at the provider.
 
-The web client is built (`apps/web/src/archBoard`). Mobile is not.
+Web and mobile integrate grading; the diagram below follows the web path.
+Both clients persist the score and the detailed feedback with the board.
 
 ```
 ┌─ CLIENT (grip-apps, apps/web) ─────────────────────────────────────┐
@@ -38,8 +39,8 @@ The web client is built (`apps/web/src/archBoard`). Mobile is not.
 │  6. CORSMiddleware      origin in ALLOWED_ORIGINS, else blocked    │
 │  7. assign_request_id   uuid4 → echoed in every AppError           │
 │  8. GradeRequest        pydantic strict; 8000 chars/section        │
-│        ⚠ a malformed body fails HERE, as FastAPI's own             │
-│          {"detail": [...]} — no code, no request_id                │
+│        malformed input → 422 invalid_request + request_id          │
+│        submitted values and dictionary keys are never echoed       │
 └────────────────────────────────┬───────────────────────────────────┘
                                  │
 ┌────────────────────────────────▼───────────────────────────────────┐
@@ -52,8 +53,8 @@ The web client is built (`apps/web/src/archBoard`). Mobile is not.
 │            apikey: ANON_KEY  +  Authorization: caller's token      │
 │            (RLS stays the boundary; no service-role key here)      │
 │                                                                    │
-│ 11. a remembered rate limit still holding? ► 429 provider_quota_…  │
-│        the last 429 is kept until it lapses, so this costs nothing │
+│ 11. validate nonblank reasoning and serialized context size        │
+│        malformed/oversized input cannot use the cache              │
 │                                                                    │
 │ 12. every section blank? ─────────────────► 422 nothing_to_grade   │
 │                                                                    │
@@ -61,7 +62,8 @@ The web client is built (`apps/web/src/archBoard`). Mobile is not.
 │        ⚠ self_rating is DROPPED — never shown to the model         │
 │                                                                    │
 │ 14. grade_cache_key(user, model, rubric, context)                  │
-│        a hit skips the provider entirely ──► step 19               │
+│        a hit skips provider AND remembered limit ──► step 19       │
+│        a miss checks the remembered limit before generation        │
 └────────────────────────────────┬───────────────────────────────────┘
                                  │
           15. provider.generate(...)   ← AI_PROVIDER picks one
@@ -86,7 +88,7 @@ The web client is built (`apps/web/src/archBoard`). Mobile is not.
 │                              of that section → 502                 │
 │ 17. apply_placeholder_floor  ≤4 words → "missing", model overruled │
 │ 18. cache.put(key)           only validated, floored grades; a 429 │
-│                              is remembered instead (step 11)       │
+│                              is remembered for later cache misses  │
 │ 19. score_from_verdicts      covered 100 / thin 50 / missing 0,    │
 │                              averaged.  THE MODEL NEVER SCORES.    │
 │ 20. divergence_from          (self_rating/5*100) − score           │
@@ -100,22 +102,25 @@ The web client is built (`apps/web/src/archBoard`). Mobile is not.
 ┌────────────────────────────────▼───────────────────────────────────┐
 │ CLIENT again                                                       │
 │ 22. Persists through its OWN Supabase session                      │
-│     → arch_boards.talk_grade   (migration 0015; the score only)    │
-│     The verdicts, quotes and follow-ups are not persisted: they    │
-│     live in the service's memory and in the open board.            │
+│     → arch_boards.talk_grade        (migration 0015; the score)    │
+│     → arch_boards.talk_assessment   (migration 0026; verdicts,     │
+│       quotes, follow-up and a fingerprint of the graded inputs)    │
+│     Shown again only while the board still matches those           │
+│     inputs. Public share links never return it.                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
 ## What the client has to handle
 
-Every failure raised by the service returns the same envelope:
-`{"error": {"code", "message", "request_id"}}`. A malformed request body is the
-exception: it is rejected by FastAPI before any of this runs and comes back as
-`{"detail": [...]}`, with no code and no request id. One envelope for both is
-Task 4 of `docs/superpowers/plans/2026-09-16-gemini-free-tier.md`, unimplemented.
+Application failures and malformed requests return the same envelope:
+`{"error": {"code", "message", "request_id"}}`. Validation failures use
+`invalid_request`; optional `validation_types` contains only validation categories,
+not input values. Unexpected internal errors are not validation failures.
 
 | Code | Status | What the caller does |
 | --- | --- | --- |
+| `invalid_request` | 422 | Correct required fields, types and length limits using the schema. |
+| `provider_busy` | 503 | Local slot unavailable; wait for `Retry-After`. |
 | `authentication_required` | 401 | Refresh the session and retry once. |
 | `nothing_to_grade` | 422 | Nothing was written. Prompt, don't retry. |
 | `context_too_large` | 413 | Over `AI_CONTEXT_MAX_CHARS`. Ask for a shorter answer. |
@@ -127,7 +132,7 @@ Task 4 of `docs/superpowers/plans/2026-09-16-gemini-free-tier.md`, unimplemented
 | `provider_unavailable` | 503 | Ollama not running, or the network is down. |
 | `model_not_found` | 503 | `ollama create grip-grader -f Modelfile` |
 
-Both 429s can come from step 11 without touching the provider, once one real
+Both 429s can come after a cache miss without touching the provider, once one real
 refusal has been seen.
 
 ## The three steps worth staring at

@@ -74,3 +74,35 @@ def test_a_zero_size_cache_always_calls_the_model():
     post(client)
 
     assert len(gemini.calls) == 2
+
+
+def test_cached_grade_survives_a_remembered_provider_limit():
+    gemini = StubGemini(suggestion(["thin"] * 6))
+    client = make_client(gemini=gemini)
+    first = post(client).json()
+    gemini.fail = AppError(429, "provider_quota_exhausted", "Used up", retry_after=3600)
+    edited = {**REAL_ANSWER, "api": REAL_ANSWER["api"] + " Another operation."}
+    assert post(client, sections=edited).status_code == 429
+    cached = post(client)
+    assert cached.status_code == 200
+    assert cached.json()["suggestion"] == first["suggestion"]
+    assert cached.json()["request_id"] != first["request_id"]
+    assert len(gemini.calls) == 2
+
+
+def test_cached_grade_still_obeys_a_lowered_context_limit():
+    gemini = StubGemini(suggestion(["thin"] * 6))
+    client = make_client(gemini=gemini)
+    assert post(client).status_code == 200
+    client.app.state.grade_service.settings.ai_context_max_chars = 1
+    response = post(client)
+    assert response.status_code == 413
+    assert len(gemini.calls) == 1
+
+
+def test_cache_recomputes_self_rating_without_spending_a_call():
+    gemini = StubGemini(suggestion(["thin"] * 6))
+    client = make_client(gemini=gemini)
+    assert post(client, self_rating=5).json()["divergence"] == 50
+    assert post(client, self_rating=1).json()["divergence"] == -30
+    assert len(gemini.calls) == 1

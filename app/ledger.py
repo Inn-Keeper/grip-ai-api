@@ -21,11 +21,11 @@ PATTERNS = [
     (
         "SALARY",
         re.compile(
-            r"(?:R\$|US\$|[$€£])\s?\d[\d.,]*\s?[kKmM]?\b"
-            r"|\b\d[\d.,]*\s?[kK]?\s?(?:SEK|USD|EUR|GBP|BRL|kr)\b"
+            r"(?:R\$|US\$|[$€£])[^\S\r\n]?\d[\d.,]*[^\S\r\n]?[kKmM]?\b"
+            r"|\b\d[\d.,]*[^\S\r\n]?[kK]?[^\S\r\n]?(?:SEK|USD|EUR|GBP|BRL|kr)\b"
         ),
     ),
-    ("PHONE", re.compile(r"\+?\(?\d[\d\s().-]{5,}\d")),
+    ("PHONE", re.compile(r"\+?\(?\d(?:[\d().-]|[^\S\r\n]){5,}\d")),
 ]
 PLACEHOLDER = re.compile(r"\[(?:LINK|EMAIL|SALARY|PHONE)_\d+\]")
 DATE_SHAPE = re.compile(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}")
@@ -92,19 +92,24 @@ def restore(value: str, mapping: dict[str, str]) -> str:
     return PLACEHOLDER.sub(lambda match: mapping.get(match.group(0), ""), value)
 
 
-def split_chunks(text: str, limit: int) -> list[str]:
-    """Split on line boundaries into chunks of at most `limit` characters."""
-    chunks: list[str] = []
-    current = ""
-    for line in text.split("\n"):
-        pieces = [line[i : i + limit] for i in range(0, len(line), limit)] or [""]
-        for piece in pieces:
-            candidate = f"{current}\n{piece}" if current else piece
-            if len(candidate) <= limit:
-                current = candidate
-            else:
-                chunks.append(current)
-                current = piece
+def numbered_chunks(lines: list[str], limit: int) -> list[tuple[str, set[int]]]:
+    """Keep source identities and whole lines within the model's chunk budget."""
+    chunks: list[tuple[str, set[int]]] = []
+    current: list[str] = []
+    ids: set[int] = set()
+    for number, line in enumerate(lines, 1):
+        numbered = f"{number}: {line}"
+        if len(numbered) > limit:
+            raise AppError(
+                413,
+                "import_line_too_long",
+                "Split long paragraphs into shorter lines before importing.",
+            )
+        if current and len("\n".join([*current, numbered])) > limit:
+            chunks.append(("\n".join(current), ids))
+            current, ids = [], set()
+        current.append(numbered)
+        ids.add(number)
     if current:
-        chunks.append(current)
+        chunks.append(("\n".join(current), ids))
     return chunks

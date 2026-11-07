@@ -1,0 +1,36 @@
+{
+  "board_id": "11111111-1111-4111-8111-111111111111",
+  "facts": {
+    "scenario_id": "catalog",
+    "name": "Read-heavy product catalog",
+    "brief": "Millions of reads, few writes. Serve product pages fast and cheap.",
+    "dau": 8000000,
+    "payload_kb": 4.0,
+    "retention_days": 1825,
+    "peak_qps": 16666.7,
+    "storage_gb": 1168.0,
+    "checks_passed": [
+      "A CDN exists for static assets"
+    ],
+    "checks_failed": [
+      "Hot reads come from a cache"
+    ],
+    "node_types": [
+      "client",
+      "cdn",
+      "service",
+      "sql"
+    ],
+    "partition_keys": [],
+    "pushback": "A merchandiser edits a price. How long until every shopper sees it?"
+  },
+  "sections": {
+    "requirements": "Serve product pages under 200ms p99 at four nines. Price edits may lag 60s. Checkout is out of scope.",
+    "scale": "8M DAU x 60 requests = 480M/day, /86400 = 5.5k/s average, x3 for peak = about 17k/s.",
+    "api": "GET /products/{id} returns the product plus stock; GET /search?q= returns a page of ids.",
+    "dataModel": "Product keyed by product_id, partitioned on it because every read is by id.",
+    "bottleneck": "The database at 17k/s. Cache-aside on Redis, then read replicas.",
+    "tradeoff": "Chose cache-aside over write-through; rejected it because writes are rare."
+  },
+  "self_rating": 4
+}

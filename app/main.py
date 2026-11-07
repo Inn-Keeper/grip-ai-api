@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, Request, Security
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -98,6 +99,37 @@ def create_app(
             headers=(
                 {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
             ),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        # Locations may contain user-provided dictionary keys; expose only the
+        # validation type, never submitted values, keys or exception context.
+        kinds = sorted({error["type"] for error in exc.errors()})
+        message = "Check required fields, field types and length limits in the request schema."
+        # These root validators have fixed rules; never forward their exception
+        # messages, which may acquire submitted values in future validators.
+        if "value_error" in kinds:
+            if request.url.path == "/api/v1/ai/grade-talk-track":
+                message = "Keep each talk-track section within 8,000 characters."
+            elif request.url.path == "/api/v1/ai/import/parse":
+                message = "Send either text or both filename and content_base64, not both sources."
+        elif "json_invalid" in kinds:
+            message = "Send valid JSON with Content-Type: application/json."
+        elif any(kind.startswith("uuid_") for kind in kinds):
+            message = "Use a valid UUID for board_id."
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "invalid_request",
+                    "message": message,
+                    "request_id": request.state.request_id,
+                    "validation_types": kinds,
+                }
+            },
         )
 
     @app.get("/health")

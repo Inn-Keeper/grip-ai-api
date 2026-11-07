@@ -58,8 +58,21 @@ class OllamaClient:
         }
         # Do not retry: a timed-out local generation may still be running.
         try:
-            async with self._lock:
+            try:
+                await asyncio.wait_for(
+                    self._lock.acquire(), self.settings.ollama_queue_timeout_seconds
+                )
+            except TimeoutError as exc:
+                raise AppError(
+                    503,
+                    "provider_busy",
+                    "Local AI is busy. Try again shortly.",
+                    retry_after=5,
+                ) from exc
+            try:
                 response = await self._post(body)
+            finally:
+                self._lock.release()
         except httpx.TransportError as exc:
             raise AppError(
                 503,

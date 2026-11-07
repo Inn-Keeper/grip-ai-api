@@ -135,7 +135,7 @@ class TestParse:
         assert [r["name"] for r in body["rows"]] == ["Globex"]
         assert body["rows"][0]["next_action_date"] is None
         assert body["rows"][0]["date"] is None
-        assert body["unplaced"] == [TEXT.split("\n")[0]]
+        assert body["unplaced"] == TEXT.splitlines()[:2]
 
     def test_early_stages_are_dated_by_the_application_date(self):
         # Applying is reaching Applied; later stages need their own date.
@@ -207,3 +207,68 @@ class TestRejects:
         assert post(client, {"text": TEXT}).status_code == 429
         assert len(provider.contexts) == 1
         assert client.get("/api/v1/ai/status").json()["grading"] == "unavailable"
+
+
+class TestCoverageRecovery:
+    def test_omitted_lines_are_returned_in_source_order(self):
+        provider = SequenceProvider(ModelLedger(rows=[row([1])], unplaced=[]))
+        body = post(make_client(gemini=provider), {"text": TEXT}).json()
+        assert body["unplaced"] == TEXT.splitlines()[1:]
+
+    def test_invalid_reference_rejects_the_entire_row(self):
+        provider = SequenceProvider(ModelLedger(rows=[row([1, 99])], unplaced=[]))
+        body = post(make_client(gemini=provider), {"text": TEXT}).json()
+        assert body["rows"] == []
+        assert body["unplaced"] == TEXT.splitlines()
+
+    def test_conflicting_rows_are_withheld(self):
+        provider = SequenceProvider(
+            ModelLedger(rows=[row([1]), row([1, 2])], unplaced=[])
+        )
+        body = post(make_client(gemini=provider), {"text": TEXT}).json()
+        assert body["rows"] == []
+        assert body["unplaced"] == TEXT.splitlines()
+
+    def test_overlong_line_fails_before_generation(self):
+        provider = SequenceProvider()
+        response = post(make_client(gemini=provider), {"text": "x" * 8001})
+        assert response.status_code == 413
+        assert response.json()["error"]["code"] == "import_line_too_long"
+        assert provider.contexts == []
+
+    def test_cross_chunk_reference_cannot_borrow_source(self):
+        text = "Acme " + "x" * 5000 + "\nGlobex " + "y" * 5000
+        provider = SequenceProvider(
+            ModelLedger(rows=[row([2])], unplaced=[]),
+            ModelLedger(rows=[], unplaced=[]),
+        )
+        body = post(make_client(gemini=provider), {"text": text}).json()
+        assert body["rows"] == []
+        assert body["unplaced"] == text.splitlines()
+
+    def test_later_chunk_failure_explains_no_results_returned(self):
+        class FailsSecond(SequenceProvider):
+            async def generate(self, *args):
+                if self.contexts:
+                    raise AppError(
+                        503, "provider_unavailable", "Unavailable", retry_after=5
+                    )
+                return await super().generate(*args)
+
+        provider = FailsSecond(ModelLedger(rows=[row([1])], unplaced=[]))
+        response = post(
+            make_client(gemini=provider), {"text": "x" * 5000 + "\n" + "y" * 5000}
+        )
+        assert response.status_code == 503
+        assert "No import results were returned" in response.json()["error"]["message"]
+        assert response.headers["Retry-After"] == "5"
+
+
+def test_repeated_reference_within_a_row_does_not_duplicate_source():
+    provider = SequenceProvider(ModelLedger(rows=[row([1, 1, 2])], unplaced=[1, 2, 99]))
+    body = post(
+        make_client(gemini=provider), {"text": "Acme applied\nFrontend role"}
+    ).json()
+    assert len(body["rows"]) == 1
+    assert body["rows"][0]["source"] == "Acme applied\nFrontend role"
+    assert body["unplaced"] == []
