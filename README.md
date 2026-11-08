@@ -313,6 +313,19 @@ HTML or plain text only, cut at 1 MB. Each user may read 30 links per 10
 minutes (`429 rate_limited` with `Retry-After`). URLs and page text are never
 logged or stored; logs keep counts per status.
 
+## Poe chat
+
+`POST /api/v1/ai/poe/chat` answers how to use Grip, in Poe's voice. Body:
+`{"locale": "en", "messages": [{"role": "user" | "poe", "text": "..."}]}` with
+up to 20 turns, user text up to 500 characters, last turn from the user. Only the
+last 10 turns reach the model, user text is redacted first, and nothing is stored
+or logged. Returns `{"reply": "..."}`. Gemini only: on Ollama it answers 503
+`poe_unavailable`. Errors: `authentication_required`, `busy`, `poe_daily_limit`,
+and the remembered provider limit for `AI_MODEL_POE`, which never blocks grading.
+
+Poe knows Grip from `app/poe_guide.md`. **Update it whenever a screen or
+feature changes**, or Poe will describe an app that no longer exists.
+
 ## Configuration
 
 | Variable | Required | Purpose |
@@ -335,6 +348,9 @@ logged or stored; logs keep counts per status.
 | `AI_MAX_OUTPUT_TOKENS` | no | Defaults to `2048` for local non-thinking output. Set `8000` for Gemini, whose thinking shares the output budget. |
 | `AI_REASONING_EFFORT` | no | Gemini only: `low`, `medium` or `high`; defaults to `low`. |
 | `AI_GRADE_CACHE_SIZE` | no | Grades kept in memory per process; defaults to `256`, `0` disables. |
+| `AI_MODEL_POE` | no | Poe chat model; defaults to `gemini-3.1-flash-lite`, which has its own free-tier quota. Must support strict outputs. |
+| `AI_POE_DAILY_CAP` | no | Poe messages per user per rolling day; defaults to `5`. |
+| `AI_POE_MAX_CONCURRENT` | no | Poe replies in flight at once; defaults to `2`. More are refused with `busy`. |
 
 The model ids in `STRICT_GEMINI_MODELS` were copied from `ativscrum-ai-api`.
 Confirm them against the provider's current model list before deploying.

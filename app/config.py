@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     ai_playbook_daily_cap: int = Field(default=3, ge=0)
     # Playbook generations in flight at once; more are refused, never queued.
     ai_max_concurrent: int = Field(default=2, ge=1)
+    # Poe guide chat: its own model, so its free-tier quota is separate from grading.
+    ai_model_poe: str = "gemini-3.1-flash-lite"
+    ai_poe_daily_cap: int = Field(default=5, ge=0)
+    ai_poe_max_concurrent: int = Field(default=2, ge=1)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -54,6 +58,14 @@ class Settings(BaseSettings):
         ):
             supported = ", ".join(sorted(STRICT_GEMINI_MODELS))
             raise ValueError(f"model must support Gemini strict outputs: {supported}")
+        if (
+            self.ai_provider == "gemini"
+            and self.ai_model_poe not in STRICT_GEMINI_MODELS
+        ):
+            supported = ", ".join(sorted(STRICT_GEMINI_MODELS))
+            raise ValueError(
+                f"Poe model must support Gemini strict outputs: {supported}"
+            )
         if self.ai_provider == "ollama":
             if not self.ollama_url.startswith(("http://", "https://")):
                 raise ValueError("OLLAMA_URL must be an HTTP(S) URL")

@@ -40,6 +40,9 @@ services:
         value: gemini
       - key: AI_MODEL_GRADE
         value: gemini-3.5-flash
+      # Poe chat gets its own model so its free-tier quota never starves grading.
+      - key: AI_MODEL_POE
+        value: gemini-3.1-flash-lite
       # Gemini's thinking shares the output budget; 2048 truncated grades.
       - key: AI_MAX_OUTPUT_TOKENS
         value: "8000"

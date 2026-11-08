@@ -21,6 +21,8 @@ from app.import_schemas import (
 from app.import_service import ImportService
 from app.playbook_schemas import ModelPlaybook, PlaybookRequest
 from app.playbook_service import PlaybookService
+from app.poe_schemas import PoeChatRequest, PoeReply
+from app.poe_service import PoeChatService
 from app.posting_service import PostingService
 from app.ollama import OllamaClient
 from app.schemas import GradeRequest, GradeResponse
@@ -42,6 +44,7 @@ def attach_services(app: FastAPI, grade_service: GradeService) -> None:
     app.state.import_service = ImportService(grade_service)
     app.state.posting_service = PostingService(grade_service)
     app.state.playbook_service = PlaybookService(grade_service)
+    app.state.poe_service = PoeChatService(grade_service)
 
 
 def create_app(
@@ -204,6 +207,18 @@ def create_app(
         token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.playbook_service.generate(
+            payload,
+            token,
+            request.state.request_id,
+        )
+
+    @app.post("/api/v1/ai/poe/chat", response_model=PoeReply)
+    async def poe_chat(
+        payload: PoeChatRequest,
+        request: Request,
+        token: Annotated[str | None, Depends(bearer_token)],
+    ):
+        return await request.app.state.poe_service.chat(
             payload,
             token,
             request.state.request_id,
