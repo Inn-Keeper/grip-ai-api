@@ -31,3 +31,7 @@ markers = [
 target-version = "py311"
 # macOS writes AppleDouble sidecars on non-APFS volumes; they are not source.
 extend-exclude = ["._*"]
+
+[tool.setuptools.package-data]
+# The Poe guide is read at import time, so it must ship inside the package.
+app = ["*.md"]
