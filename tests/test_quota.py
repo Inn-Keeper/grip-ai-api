@@ -167,3 +167,16 @@ class TestRememberingASpentQuota:
         assert blocked["code"] == "provider_quota_exhausted"
         assert blocked["retry_after"] == 3600
         assert len(gemini.calls) == 1
+
+
+def test_limit_is_remembered_per_model():
+    from app.service import GradeService
+    from tests.conftest import StubSupabase, settings
+
+    service = GradeService(settings(), StubSupabase(), StubGemini())
+    later = AppError(429, "provider_limited", "Later.", retry_after=60)
+    service.remember(later, "gemini-3.1-flash-lite")
+    assert service.current_limit("gemini-3.1-flash-lite").code == "provider_limited"
+    assert service.current_limit() is None
+    service.remember(later)
+    assert service.current_limit() is not None

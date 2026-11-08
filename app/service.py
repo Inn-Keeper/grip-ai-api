@@ -142,28 +142,28 @@ class GradeService:
         self.provider = provider
         self.clock = clock
         self.cache = GradeCache(settings.ai_grade_cache_size)
-        self._limit: AppError | None = None
-        self._limited_until: datetime | None = None
+        # Free-tier quota is per model, so each model's 429 is remembered apart.
+        self._limits: dict[str, tuple[AppError, datetime]] = {}
 
-    def current_limit(self) -> AppError | None:
+    def current_limit(self, model: str | None = None) -> AppError | None:
         """The live limit with its countdown refreshed, or None once it lapses."""
-        if self._limit is None or self._limited_until is None:
+        model = model or self.settings.ai_model_grade
+        entry = self._limits.get(model)
+        if entry is None:
             return None
-        remaining = int((self._limited_until - self.clock()).total_seconds())
+        limit, until = entry
+        remaining = int((until - self.clock()).total_seconds())
         if remaining <= 0:
-            self._limit = self._limited_until = None
+            del self._limits[model]
             return None
         return AppError(
-            self._limit.status_code,
-            self._limit.code,
-            self._limit.message,
-            retry_after=remaining,
+            limit.status_code, limit.code, limit.message, retry_after=remaining
         )
 
-    def remember(self, error: AppError) -> None:
+    def remember(self, error: AppError, model: str | None = None) -> None:
         if error.status_code == 429 and error.retry_after:
-            self._limit = error
-            self._limited_until = self.clock() + timedelta(seconds=error.retry_after)
+            until = self.clock() + timedelta(seconds=error.retry_after)
+            self._limits[model or self.settings.ai_model_grade] = (error, until)
 
     def grading_status(self) -> dict:
         """Whether grading would go through, answered without asking Google."""
