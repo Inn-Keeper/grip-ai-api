@@ -56,7 +56,7 @@ class PlaybookService:
             raise AppError(
                 503,
                 "busy",
-                "Grip is busy writing other playbooks. Try again shortly.",
+                "Grip is busy writing other battle plans. Try again shortly.",
                 retry_after=BUSY_RETRY_SECONDS,
             )
         spent = self._spend(session.user_id)
@@ -109,7 +109,7 @@ class PlaybookService:
             raise AppError(
                 429,
                 "playbook_daily_limit",
-                "You've generated today's playbooks. Try again tomorrow.",
+                "You've generated today's battle plans. Try again tomorrow.",
                 retry_after=wait,
             )
         spent.append(now)

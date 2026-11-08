@@ -66,7 +66,7 @@ def _invalid(detail: str) -> AppError:
     return AppError(
         502,
         "invalid_model_response",
-        f"The model returned a playbook Grip cannot use ({detail}). Try again.",
+        f"The model returned a battle plan Grip cannot use ({detail}). Try again.",
     )
 
 
