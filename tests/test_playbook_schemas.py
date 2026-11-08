@@ -47,6 +47,7 @@ def playbook(stories=None, checks=None) -> ModelPlaybook:
             "scenario": {
                 "name": "Payments",
                 "brief": "Design a payments service.",
+                "starter": ["client", "service"],
                 "checks": checks
                 or [
                     check(),
@@ -124,3 +125,17 @@ def test_prompt_keeps_ids_untranslated():
     from app.playbook_prompt import PLAYBOOK_PROMPT
 
     assert "never translate" in PLAYBOOK_PROMPT.lower()
+
+
+def test_rejects_unknown_starter_component():
+    book = playbook()
+    book.scenario.starter = ["client", "kafka"]
+    with pytest.raises(AppError):
+        validate_playbook(book, COMPETENCIES, NODE_TYPES)
+
+
+def test_starter_is_required_and_bounded():
+    data = playbook().model_dump(by_alias=True)
+    data["scenario"]["starter"] = ["client"]
+    with pytest.raises(ValidationError):
+        ModelPlaybook.model_validate(data)

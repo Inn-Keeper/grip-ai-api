@@ -52,6 +52,8 @@ class ModelCheck(BaseModel):
 class ModelScenario(BaseModel):
     name: str = Field(max_length=80)
     brief: str = Field(max_length=1500)
+    # Components placed on the user's first board: a start, not the solution.
+    starter: list[Short] = Field(min_length=2, max_length=4)
     checks: list[ModelCheck] = Field(min_length=3, max_length=12)
 
 
@@ -80,6 +82,8 @@ def validate_playbook(
         if match is None:
             raise _invalid("unknown competency")
         story.competency = match
+    if any(i not in allowed for i in playbook.scenario.starter):
+        raise _invalid("unknown starter component")
     for check in playbook.scenario.checks:
         ids = check.type + check.from_ + check.to
         if any(i not in allowed for i in ids):

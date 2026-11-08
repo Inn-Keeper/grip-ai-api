@@ -21,6 +21,9 @@ Write a playbook:
 - scenario: one system design exercise fitting the role. If goal is "design"
   and brief is set, the scenario is that brief. Give a short name, a brief with
   the requirements and clearly hypothetical scale, and 3 to 12 checks.
+- starter: 2 to 4 components every design for this scenario begins with, such as
+  the client and its entry point. They go on the candidate's empty board, so give
+  a start, never the full solution. Use only ids from PROJECT_DATA.node_types.
 - checks: kind "node" needs type (components that must exist); kind "edge" needs
   from and to (components that must be connected). Use only ids from
   PROJECT_DATA.node_types. points between 1 and 30.

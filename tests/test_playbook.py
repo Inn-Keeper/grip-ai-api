@@ -19,6 +19,7 @@ def canned(competency="Failure") -> ModelPlaybook:
             "scenario": {
                 "name": "Payments",
                 "brief": "Design a payments service.",
+                "starter": ["client", "service"],
                 "checks": [
                     check(),
                     check(kind="edge", type=[], **{"from": ["client"]}, to=["service"]),
