@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     ai_reasoning_effort: Literal["low", "medium", "high"] = "low"
     # Recent grades kept in memory so unchanged reasoning is not re-graded; 0 disables.
     ai_grade_cache_size: int = Field(default=256, ge=0)
+    # First-run playbooks per user per rolling day; cache hits are free.
+    ai_playbook_daily_cap: int = Field(default=3, ge=0)
+    # Playbook generations in flight at once; more are refused, never queued.
+    ai_max_concurrent: int = Field(default=2, ge=1)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

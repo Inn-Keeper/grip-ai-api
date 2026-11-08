@@ -19,6 +19,8 @@ from app.import_schemas import (
     PostingsResponse,
 )
 from app.import_service import ImportService
+from app.playbook_schemas import ModelPlaybook, PlaybookRequest
+from app.playbook_service import PlaybookService
 from app.posting_service import PostingService
 from app.ollama import OllamaClient
 from app.schemas import GradeRequest, GradeResponse
@@ -39,6 +41,7 @@ def attach_services(app: FastAPI, grade_service: GradeService) -> None:
     app.state.grade_service = grade_service
     app.state.import_service = ImportService(grade_service)
     app.state.posting_service = PostingService(grade_service)
+    app.state.playbook_service = PlaybookService(grade_service)
 
 
 def create_app(
@@ -189,6 +192,18 @@ def create_app(
         token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.posting_service.read(
+            payload,
+            token,
+            request.state.request_id,
+        )
+
+    @app.post("/api/v1/ai/first-run/playbook", response_model=ModelPlaybook)
+    async def first_run_playbook(
+        payload: PlaybookRequest,
+        request: Request,
+        token: Annotated[str | None, Depends(bearer_token)],
+    ):
+        return await request.app.state.playbook_service.generate(
             payload,
             token,
             request.state.request_id,

@@ -156,7 +156,10 @@ class TestRememberingASpentQuota:
     def test_status_reports_the_block_without_spending_a_request(self):
         gemini, client = self.exhausted(lambda: MORNING)
 
-        assert client.get("/api/v1/ai/status").json() == {"grading": "available"}
+        assert client.get("/api/v1/ai/status").json() == {
+            "grading": "available",
+            "provider": "gemini",
+        }
         post(client)
         blocked = client.get("/api/v1/ai/status").json()
 

@@ -169,9 +169,10 @@ class GradeService:
         """Whether grading would go through, answered without asking Google."""
         limit = self.current_limit()
         if limit is None:
-            return {"grading": "available"}
+            return {"grading": "available", "provider": self.settings.ai_provider}
         return {
             "grading": "unavailable",
+            "provider": self.settings.ai_provider,
             "code": limit.code,
             "message": limit.message,
             "retry_after": limit.retry_after,
