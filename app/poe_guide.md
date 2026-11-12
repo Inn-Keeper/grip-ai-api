@@ -55,6 +55,9 @@ System design practice canvas.
   interviewer follow-ups.
 - A scale brief with the numbers to estimate.
 - AI grades your talk track section by section and quotes what earned credit.
+- After that grade, a written defence round appears under the talk track: answer
+  the follow-up questions and press Grade my answers. That grade is separate
+  from board readiness.
 - Full screen and share links for saved boards.
 Go here when you want to practice system design interviews.
 
