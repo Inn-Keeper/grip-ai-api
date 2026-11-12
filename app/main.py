@@ -27,6 +27,8 @@ from app.posting_service import PostingService
 from app.ollama import OllamaClient
 from app.schemas import GradeRequest, GradeResponse
 from app.service import GradeService
+from app.story_schemas import StoryGradeRequest, StoryGradeResponse
+from app.story_service import StoryGradeService
 from app.supabase import SupabaseGateway
 
 
@@ -45,6 +47,7 @@ def attach_services(app: FastAPI, grade_service: GradeService) -> None:
     app.state.posting_service = PostingService(grade_service)
     app.state.playbook_service = PlaybookService(grade_service)
     app.state.poe_service = PoeChatService(grade_service)
+    app.state.story_service = StoryGradeService(grade_service)
 
 
 def create_app(
@@ -120,12 +123,15 @@ def create_app(
         if "value_error" in kinds:
             if request.url.path == "/api/v1/ai/grade-talk-track":
                 message = "Keep each talk-track section within 8,000 characters."
+            elif request.url.path == "/api/v1/ai/grade-story":
+                message = "Keep each story section within 8,000 characters."
             elif request.url.path == "/api/v1/ai/import/parse":
                 message = "Send either text or both filename and content_base64, not both sources."
         elif "json_invalid" in kinds:
             message = "Send valid JSON with Content-Type: application/json."
         elif any(kind.startswith("uuid_") for kind in kinds):
-            message = "Use a valid UUID for board_id."
+            is_story = request.url.path == "/api/v1/ai/grade-story"
+            message = f"Use a valid UUID for {'story_id' if is_story else 'board_id'}."
         return JSONResponse(
             status_code=422,
             content={
@@ -171,6 +177,18 @@ def create_app(
         token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.grade_service.grade(
+            payload,
+            token,
+            request.state.request_id,
+        )
+
+    @app.post("/api/v1/ai/grade-story", response_model=StoryGradeResponse)
+    async def grade_story(
+        payload: StoryGradeRequest,
+        request: Request,
+        token: Annotated[str | None, Depends(bearer_token)],
+    ):
+        return await request.app.state.story_service.grade(
             payload,
             token,
             request.state.request_id,

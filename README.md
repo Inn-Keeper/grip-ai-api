@@ -313,6 +313,18 @@ HTML or plain text only, cut at 1 MB. Each user may read 30 links per 10
 minutes (`429 rate_limited` with `Retry-After`). URLs and page text are never
 logged or stored; logs keep counts per status.
 
+## Story grading
+
+`POST /api/v1/ai/grade-story` grades a STAR story with the same guards as the
+talk track: verdicts per section, a verbatim quote for any credit, the score
+computed in code and the four-word placeholder floor. Body:
+`{"story_id": "<uuid>", "competency": "Delivery", "title": "...",
+"sections": {"situation": "...", "task": "...", "action": "...", "result": "..."}}`.
+Returns `{"request_id", "model", "story_id", "score", "suggestion": {"sections":
+[{"section", "verdict", "evidence", "gap"}], "hardest_followup"}}`. Errors match
+the talk-track endpoint. The rubric is in `app/story_prompt.py`; it has not been
+calibrated, so treat the verdicts as prompts for revision rather than a rating.
+
 ## Poe chat
 
 `POST /api/v1/ai/poe/chat` answers how to use Grip, in Poe's voice. Body:
