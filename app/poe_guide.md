@@ -20,6 +20,7 @@ Adaptive flashcards and drills.
 - About 50 technologies in 10 categories, each with prep notes and a quiz.
 - Difficulty tiers from Clear Skies to Thunderstorm. Thunderstorm answers race
   a 20 second clock for 1.5x XP.
+- After you answer, the question shows a short explanation of the right answer.
 - Next Up picks your session: due reviews, your prep plan, or your weakest techs.
 - Mock loop: a rapid-fire quiz, a system design and a behavioral prompt, scored
   as one interview.
@@ -37,6 +38,9 @@ A STAR story bank for behavioral interviews.
 - Drill prompts mode: a random interview question, then reveal your matching
   stories.
 - Link a story to the system behind it and design that board on the Arch Board.
+- Open a story and press Grade this story: AI rates each STAR section as
+  Covered, Thin or Missing and gives the question an interviewer would ask next.
+  Editing the story makes the grade stale until you grade again.
 Go here when you want to prepare "tell me about a time" answers.
 
 ## Arch Board
