@@ -325,6 +325,18 @@ Returns `{"request_id", "model", "story_id", "score", "suggestion": {"sections":
 the talk-track endpoint. The rubric is in `app/story_prompt.py`; it has not been
 calibrated, so treat the verdicts as prompts for revision rather than a rating.
 
+## Follow-up grading
+
+`POST /api/v1/ai/grade-followups` grades written answers to interviewer
+follow-ups on a finished board, in one model call. Body: `{"board_id": "<uuid>",
+"facts": <same ScenarioFacts as the talk track>, "followups": [{"question":
+"...", "answer": "..."}]}` with 1 to 6 entries. Returns `{"request_id", "model",
+"board_id", "score", "answers": [{"section": "q1", "verdict", "evidence",
+"gap"}]}`, one per follow-up in the order sent. Blank answers never reach the
+model: they come back `missing` with the question itself as the gap, and count
+as zero in the score. The same evidence and placeholder guards apply. The talk
+track itself is not sent, to keep the local model's context small. Uncalibrated.
+
 ## Poe chat
 
 `POST /api/v1/ai/poe/chat` answers how to use Grip, in Poe's voice. Body:

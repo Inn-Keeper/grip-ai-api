@@ -11,6 +11,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import Settings
 from app.errors import AppError
+from app.followup_schemas import FollowupGradeRequest, FollowupGradeResponse
+from app.followup_service import FollowupGradeService
 from app.gemini import GeminiClient
 from app.import_schemas import (
     ImportRequest,
@@ -48,6 +50,7 @@ def attach_services(app: FastAPI, grade_service: GradeService) -> None:
     app.state.playbook_service = PlaybookService(grade_service)
     app.state.poe_service = PoeChatService(grade_service)
     app.state.story_service = StoryGradeService(grade_service)
+    app.state.followup_service = FollowupGradeService(grade_service)
 
 
 def create_app(
@@ -177,6 +180,18 @@ def create_app(
         token: Annotated[str | None, Depends(bearer_token)],
     ):
         return await request.app.state.grade_service.grade(
+            payload,
+            token,
+            request.state.request_id,
+        )
+
+    @app.post("/api/v1/ai/grade-followups", response_model=FollowupGradeResponse)
+    async def grade_followups(
+        payload: FollowupGradeRequest,
+        request: Request,
+        token: Annotated[str | None, Depends(bearer_token)],
+    ):
+        return await request.app.state.followup_service.grade(
             payload,
             token,
             request.state.request_id,
