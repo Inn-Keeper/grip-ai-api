@@ -54,6 +54,9 @@ System design practice canvas.
 - Evaluate against the scenario checklist: what is missing, design warnings and
   interviewer follow-ups.
 - A scale brief with the numbers to estimate.
+- On an empty board you can start a 10-minute skeleton sprint: 2 minutes to
+  scope, 8 to draw every box. The score stays hidden until you finish, and a
+  sprint log tracks your times and the checks you miss most.
 - AI grades your talk track section by section and quotes what earned credit.
 - After that grade, a written defence round appears under the talk track: answer
   the follow-up questions and press Grade my answers. That grade is separate
