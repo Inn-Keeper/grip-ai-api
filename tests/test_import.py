@@ -285,5 +285,13 @@ def test_daily_cap_counts_imports():
 
 def test_oversized_body_fields_fail_schema_before_auth():
     assert post(make_client(), {"text": "x" * 200_000}, token=None).status_code == 422
-    huge = {"filename": "a.md", "content_base64": "A" * 2_000_000}
+    huge = {"filename": "a.md", "content_base64": "A" * 1_600_000}
     assert post(make_client(), huge, token=None).status_code == 422
+
+
+def test_huge_body_is_refused_before_parsing():
+    response = make_client().post(
+        URL, content=b"x" * 3_000_000, headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "request_too_large"
