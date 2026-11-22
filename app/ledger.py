@@ -16,18 +16,22 @@ WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 # Order matters: a URL can contain an email or digits, so it is taken first.
 PATTERNS = [
-    ("LINK", re.compile(r"(?:https?://|www\.)[^\s]+?(?=[.,;:!?)\]]*(?:\s|$))")),
-    ("EMAIL", re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")),
+    # Trailing punctuation is trimmed in redact(); a lookahead for it here was quadratic.
+    ("LINK", re.compile(r"(?:https?://|www\.)\S+")),
+    # The lookbehind starts a match only at the head of a run, keeping the scan linear.
+    ("EMAIL", re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")),
     (
         "SALARY",
         re.compile(
             r"(?:R\$|US\$|[$€£])[^\S\r\n]?\d[\d.,]*[^\S\r\n]?[kKmM]?\b"
             r"|\b\d[\d.,]*[^\S\r\n]?[kK]?[^\S\r\n]?(?:SEK|USD|EUR|GBP|BRL|kr)\b"
+            r"|\b(?:SEK|USD|EUR|GBP|BRL|(?i:salary):?)[^\S\r\n]?\d[\d.,]*[kKmM]?\b"
         ),
     ),
-    ("PHONE", re.compile(r"\+?\(?\d(?:[\d().-]|[^\S\r\n]){5,}\d")),
+    ("PHONE", re.compile(r"\+?\(?\d(?:[\d()./-]|[^\S\r\n]){5,}\d")),
 ]
 PLACEHOLDER = re.compile(r"\[(?:LINK|EMAIL|SALARY|PHONE)_\d+\]")
+LINK_TAIL = ".,;:!?)]"
 DATE_SHAPE = re.compile(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}")
 MIN_PHONE_DIGITS = 7
 # A 1 MB upload can be a zip bomb; real ledgers unpack to well under this.
@@ -46,17 +50,26 @@ def extract_text(filename: str, data: bytes) -> str:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             if archive.getinfo("word/document.xml").file_size > MAX_XML_BYTES:
                 raise AppError(413, "file_too_large", "This .docx file is too large.")
-            root = ElementTree.fromstring(archive.read("word/document.xml"))
+            xml = archive.read("word/document.xml")
+            # Word never writes a DTD; refusing one blocks entity-expansion bombs.
+            if b"<!DOCTYPE" in xml:
+                raise AppError(
+                    422, "unreadable_file", "This .docx file could not be read."
+                )
+            root = ElementTree.fromstring(xml)
     except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
         raise AppError(
             422, "unreadable_file", "This .docx file could not be read."
         ) from exc
-    # One line per Word paragraph; list items are paragraphs too.
-    lines = (
-        "".join(t.text or "" for t in p.iter(f"{WORD_NS}t"))
-        for p in root.iter(f"{WORD_NS}p")
-    )
-    return "\n".join(line for line in lines if line.strip())
+    # One line per Word paragraph; list items are paragraphs too. A single walk keeps
+    # (invalid) nested paragraphs linear: their text starts a new line.
+    lines: list[list[str]] = []
+    for element in root.iter():
+        if element.tag == f"{WORD_NS}p":
+            lines.append([])
+        elif element.tag == f"{WORD_NS}t" and lines:
+            lines[-1].append(element.text or "")
+    return "\n".join(text for line in lines if (text := "".join(line)).strip())
 
 
 def _is_phone(candidate: str) -> bool:
@@ -74,6 +87,10 @@ def redact(text: str) -> tuple[str, dict[str, str]]:
 
         def swap(match: re.Match, kind: str = kind) -> str:
             value = match.group(0)
+            tail = ""
+            if kind == "LINK":
+                trimmed = value.rstrip(LINK_TAIL)
+                value, tail = trimmed, value[len(trimmed) :]
             if kind == "PHONE" and not _is_phone(value):
                 return value
             if value not in by_value:
@@ -81,7 +98,7 @@ def redact(text: str) -> tuple[str, dict[str, str]]:
                 placeholder = f"[{kind}_{counts[kind]}]"
                 by_value[value] = placeholder
                 mapping[placeholder] = value
-            return by_value[value]
+            return by_value[value] + tail
 
         text = pattern.sub(swap, text)
     return text, mapping

@@ -281,3 +281,9 @@ def test_daily_cap_counts_imports():
     capped = post(client, {"text": "Acme applied"})
     assert capped.status_code == 429
     assert capped.json()["error"]["code"] == "import_daily_limit"
+
+
+def test_oversized_body_fields_fail_schema_before_auth():
+    assert post(make_client(), {"text": "x" * 200_000}, token=None).status_code == 422
+    huge = {"filename": "a.md", "content_base64": "A" * 2_000_000}
+    assert post(make_client(), huge, token=None).status_code == 422
