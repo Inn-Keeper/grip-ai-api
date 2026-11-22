@@ -272,3 +272,12 @@ def test_repeated_reference_within_a_row_does_not_duplicate_source():
     assert len(body["rows"]) == 1
     assert body["rows"][0]["source"] == "Acme applied\nFrontend role"
     assert body["unplaced"] == []
+
+
+def test_daily_cap_counts_imports():
+    ledger = ModelLedger(rows=[row([1])], unplaced=[])
+    client = make_client(gemini=SequenceProvider(ledger, ledger), ai_import_daily_cap=1)
+    assert post(client, {"text": "Acme applied"}).status_code == 200
+    capped = post(client, {"text": "Acme applied"})
+    assert capped.status_code == 429
+    assert capped.json()["error"]["code"] == "import_daily_limit"

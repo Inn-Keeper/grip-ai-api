@@ -134,9 +134,17 @@ def test_failed_generation_refunds_the_cap():
     assert client.post(URL, json=body(), headers=AUTH).status_code == 200
 
 
-def test_invalid_output_refunds_the_cap():
+def test_invalid_output_still_counts_toward_the_cap():
+    # The model call was spent; refunding it let a crafted request loop for free.
     provider = PlaybookProvider(canned(competency="Teamwork"))
     client = make_client(gemini=provider, ai_playbook_daily_cap=1)
     assert client.post(URL, json=body(), headers=AUTH).status_code == 502
     provider.value = canned()
-    assert client.post(URL, json=body(), headers=AUTH).status_code == 200
+    assert client.post(URL, json=body(), headers=AUTH).status_code == 429
+
+
+def test_blank_competencies_are_rejected():
+    response = make_client(gemini=PlaybookProvider()).post(
+        URL, json=body(competencies=["  "]), headers=AUTH
+    )
+    assert response.status_code == 422

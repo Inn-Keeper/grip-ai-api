@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from app.config import Settings
+from app.daily_cap import DailyCap
 from app.errors import AppError
 from app.gemini import GeminiClient
 from app.ollama import OllamaClient
@@ -142,6 +143,12 @@ class GradeService:
         self.provider = provider
         self.clock = clock
         self.cache = GradeCache(settings.ai_grade_cache_size)
+        self.cap = DailyCap(
+            settings.ai_grade_daily_cap,
+            "grade_daily_limit",
+            "You've used today's grades. Try again tomorrow.",
+            lambda: self.clock(),
+        )
         # Free-tier quota is per model, so each model's 429 is remembered apart.
         self._limits: dict[str, tuple[AppError, datetime]] = {}
 
@@ -216,11 +223,13 @@ class GradeService:
             limit = self.current_limit()
             if limit is not None:
                 raise limit
+            spent = self.cap.spend(session.user_id)
             try:
                 result = await self.provider.generate(
                     model, SYSTEM_PROMPT, context, GradeSuggestion
                 )
             except AppError as error:
+                self.cap.refund(session.user_id, spent)
                 self.remember(error)
                 raise
             validate_evidence(result.value, sections)

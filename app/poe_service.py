@@ -2,9 +2,7 @@
 
 import asyncio
 import logging
-from collections import defaultdict, deque
-from datetime import timedelta
-
+from app.daily_cap import DailyCap
 from app.errors import AppError
 from app.ledger import redact
 from app.poe_prompt import POE_PROMPT
@@ -13,7 +11,6 @@ from app.service import GradeService
 
 log = logging.getLogger(__name__)
 
-DAY = timedelta(days=1)
 BUSY_RETRY_SECONDS = 30
 MODEL_TURNS = 10
 
@@ -28,7 +25,12 @@ class PoeChatService:
     def __init__(self, grading: GradeService) -> None:
         self.grading = grading
         self._slots = asyncio.Semaphore(grading.settings.ai_poe_max_concurrent)
-        self._spent: dict[str, deque] = defaultdict(deque)
+        self.cap = DailyCap(
+            grading.settings.ai_poe_daily_cap,
+            "poe_daily_limit",
+            "That's all the questions I can take today. Back tomorrow, friend.",
+            lambda: grading.clock(),
+        )
 
     async def chat(
         self, payload: PoeChatRequest, token: str | None, request_id: str
@@ -52,14 +54,14 @@ class PoeChatService:
                 retry_after=BUSY_RETRY_SECONDS,
             )
 
-        spent = self._spend(session.user_id)
+        spent = self.cap.spend(session.user_id)
         try:
             async with self._slots:
                 result = await self.grading.provider.generate(
                     model, POE_PROMPT, self._context(payload), PoeReply
                 )
         except AppError as error:
-            self._refund(session.user_id, spent)
+            self.cap.refund(session.user_id, spent)
             self.grading.remember(error, model)
             log.info("poe %s: %s", request_id, error.code)
             raise
@@ -76,26 +78,3 @@ class PoeChatService:
             for turn in payload.messages[-MODEL_TURNS:]
         ]
         return {"locale": payload.locale, "conversation": conversation}
-
-    def _refund(self, user_id: str, spent) -> None:
-        try:
-            self._spent[user_id].remove(spent)
-        except ValueError:
-            pass
-
-    def _spend(self, user_id: str):
-        """Rolling 24 hour cap per user."""
-        now = self.grading.clock()
-        spent = self._spent[user_id]
-        while spent and now - spent[0] >= DAY:
-            spent.popleft()
-        if len(spent) >= self.grading.settings.ai_poe_daily_cap:
-            wait = int((spent[0] + DAY - now).total_seconds()) + 1 if spent else 3600
-            raise AppError(
-                429,
-                "poe_daily_limit",
-                "That's all the questions I can take today. Back tomorrow, friend.",
-                retry_after=wait,
-            )
-        spent.append(now)
-        return now
