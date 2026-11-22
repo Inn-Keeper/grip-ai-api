@@ -83,13 +83,17 @@ class ImportService:
         chunks = numbered_chunks(redacted_lines, CHUNK_CHARS)
         # One import is one unit, however many chunks it takes.
         spent = self.cap.spend(session.user_id)
+        answered = False
         candidates: list[tuple[ImportRow, set[int]]] = []
         today = self.grading.clock().date().isoformat()
         for chunk, allowed in chunks:
             try:
                 ledger = await self._generate({"today": today, "ledger": chunk})
+                answered = True
             except AppError as error:
-                self.cap.refund(session.user_id, spent)
+                # Earlier chunks already cost quota, so a late failure is not refunded.
+                if not answered:
+                    self.cap.refund(session.user_id, spent, error)
                 raise AppError(
                     error.status_code,
                     error.code,
@@ -155,17 +159,7 @@ class ImportService:
         limit = self.grading.current_limit()
         if limit is not None:
             raise limit
-        try:
-            result = await self.grading.provider.generate(
-                self.grading.settings.ai_model_grade,
-                IMPORT_PROMPT,
-                context,
-                ModelLedger,
-            )
-        except AppError as error:
-            self.grading.remember(error)
-            raise
-        return result.value
+        return await self.grading.generate(IMPORT_PROMPT, context, ModelLedger)
 
     @staticmethod
     def _row(

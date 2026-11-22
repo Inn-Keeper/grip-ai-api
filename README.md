@@ -373,8 +373,9 @@ feature changes**, or Poe will describe an app that no longer exists.
 | `AI_REASONING_EFFORT` | no | Gemini only: `low`, `medium` or `high`; defaults to `low`. |
 | `AI_GRADE_CACHE_SIZE` | no | Grades kept in memory per process; defaults to `256`, `0` disables. |
 | `AI_MODEL_POE` | no | Poe chat model; defaults to `gemini-3.1-flash-lite`, which has its own free-tier quota. Must support strict outputs. |
-| `AI_GRADE_DAILY_CAP` | no | Uncached grades per user per rolling day; defaults to `100`. Provider failures are refunded. |
-| `AI_IMPORT_DAILY_CAP` | no | Ledger imports per user per rolling day; defaults to `10`. Provider failures are refunded. |
+| `AI_GRADE_DAILY_CAP` | no | Uncached talk-track, story and follow-up grades per user per rolling day, shared; defaults to `100`. Refunded when the provider never answered. |
+| `AI_MAX_CONCURRENT` | no | Model calls in flight at once, separately for playbooks and for grading/import; defaults to `2`. More are refused with `busy`. |
+| `AI_IMPORT_DAILY_CAP` | no | Ledger imports per user per rolling day; defaults to `10`. Refunded only when no chunk was answered. |
 | `AI_POE_DAILY_CAP` | no | Poe messages per user per rolling day; defaults to `5`. |
 | `AI_POE_MAX_CONCURRENT` | no | Poe replies in flight at once; defaults to `2`. More are refused with `busy`. |
 

@@ -67,3 +67,12 @@ def test_all_blank_is_refused_before_the_model():
     response = post(make_client(gemini=gemini), [{"question": "Why?", "answer": " "}])
     assert response.json()["error"]["code"] == "nothing_to_grade"
     assert gemini.calls == []
+
+
+def test_followup_grades_share_the_grading_cap():
+    client = make_client(gemini=StubGemini(graded()), ai_grade_daily_cap=1)
+    assert post(client).status_code == 200
+    changed = [{**FOLLOWUPS[0], "answer": ANSWER + " Also a TTL."}, FOLLOWUPS[1]]
+    capped = post(client, changed)
+    assert capped.status_code == 429
+    assert capped.json()["error"]["code"] == "grade_daily_limit"

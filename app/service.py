@@ -6,6 +6,7 @@ itself through its own Supabase session. Recent grades are only cached in
 memory, so resubmitting unchanged reasoning costs no provider quota.
 """
 
+import asyncio
 import hashlib
 import json
 from collections import OrderedDict
@@ -36,6 +37,9 @@ SELF_RATING_MAX = 5
 # ponytail: word count is a blunt proxy for "placeholder" — a terse real answer
 # of four words scores missing too. Replace with a smarter check if that bites.
 PLACEHOLDER_MAX_WORDS = 4
+
+
+BUSY_RETRY_SECONDS = 30
 
 
 def validate_evidence(suggestion: GradeSuggestion, sections: dict) -> None:
@@ -149,6 +153,8 @@ class GradeService:
             "You've used today's grades. Try again tomorrow.",
             lambda: self.clock(),
         )
+        # Grading, story, follow-up and import calls in flight at once; more are busy.
+        self.slots = asyncio.Semaphore(settings.ai_max_concurrent)
         # Free-tier quota is per model, so each model's 429 is remembered apart.
         self._limits: dict[str, tuple[AppError, datetime]] = {}
 
@@ -166,6 +172,29 @@ class GradeService:
         return AppError(
             limit.status_code, limit.code, limit.message, retry_after=remaining
         )
+
+    async def generate(self, prompt: str, context: dict, output_type, user_id=None):
+        """One grading-model call: busy check, then the daily cap when user_id is
+        given (refunded unless the model answered), then the provider."""
+        if self.slots.locked():
+            raise AppError(
+                503,
+                "busy",
+                "Grip is busy grading for someone else. Try again shortly.",
+                retry_after=BUSY_RETRY_SECONDS,
+            )
+        spent = self.cap.spend(user_id) if user_id else None
+        try:
+            async with self.slots:
+                result = await self.provider.generate(
+                    self.settings.ai_model_grade, prompt, context, output_type
+                )
+        except AppError as error:
+            if spent:
+                self.cap.refund(user_id, spent, error)
+            self.remember(error)
+            raise
+        return result.value
 
     def remember(self, error: AppError, model: str | None = None) -> None:
         if error.status_code == 429 and error.retry_after:
@@ -223,17 +252,11 @@ class GradeService:
             limit = self.current_limit()
             if limit is not None:
                 raise limit
-            spent = self.cap.spend(session.user_id)
-            try:
-                result = await self.provider.generate(
-                    model, SYSTEM_PROMPT, context, GradeSuggestion
-                )
-            except AppError as error:
-                self.cap.refund(session.user_id, spent)
-                self.remember(error)
-                raise
-            validate_evidence(result.value, sections)
-            suggestion = apply_placeholder_floor(result.value, sections)
+            value = await self.generate(
+                SYSTEM_PROMPT, context, GradeSuggestion, session.user_id
+            )
+            validate_evidence(value, sections)
+            suggestion = apply_placeholder_floor(value, sections)
             self.cache.put(key, suggestion)
         score = score_from_verdicts(suggestion)
         return GradeResponse(
