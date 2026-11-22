@@ -187,3 +187,15 @@ class TestRefusals:
     def test_every_error_carries_a_request_id(self):
         gemini = StubGemini(fail=AppError(429, "provider_limited", "Rate limited."))
         assert post(make_client(gemini=gemini)).json()["error"]["request_id"]
+
+
+def test_daily_cap_counts_uncached_grades_and_refunds_provider_failures():
+    gemini = StubGemini(fail=AppError(502, "provider_unavailable", "Down."))
+    client = make_client(gemini=gemini, ai_grade_daily_cap=1)
+    assert post(client).status_code == 502
+    gemini.fail, gemini.value = None, suggestion(["covered"] * 6)
+    assert post(client).status_code == 200
+    assert post(client).status_code == 200  # same text: cache hit, free
+    capped = post(client, sections={**REAL_ANSWER, "api": "different"})
+    assert capped.status_code == 429
+    assert capped.json()["error"]["code"] == "grade_daily_limit"

@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from datetime import date
 
+from app.daily_cap import DailyCap
 from app.errors import AppError
 from app.import_prompt import IMPORT_PROMPT
 from app.import_schemas import (
@@ -57,13 +58,19 @@ class ImportService:
 
     def __init__(self, grading: GradeService) -> None:
         self.grading = grading
+        self.cap = DailyCap(
+            grading.settings.ai_import_daily_cap,
+            "import_daily_limit",
+            "You've used today's imports. Try again tomorrow.",
+            lambda: grading.clock(),
+        )
 
     async def parse(
         self, payload: ImportRequest, token: str | None, request_id: str
     ) -> ImportResponse:
         if not token:
             raise AppError(401, "authentication_required", "Authentication required.")
-        await self.grading.supabase.validate_session(token)
+        session = await self.grading.supabase.validate_session(token)
 
         lines = [line for line in self._text(payload).split("\n") if line.strip()]
         if not lines:
@@ -74,12 +81,15 @@ class ImportService:
         clean, mapping = redact("\n".join(lines))
         redacted_lines = clean.split("\n")
         chunks = numbered_chunks(redacted_lines, CHUNK_CHARS)
+        # One import is one unit, however many chunks it takes.
+        spent = self.cap.spend(session.user_id)
         candidates: list[tuple[ImportRow, set[int]]] = []
         today = self.grading.clock().date().isoformat()
         for chunk, allowed in chunks:
             try:
                 ledger = await self._generate({"today": today, "ledger": chunk})
             except AppError as error:
+                self.cap.refund(session.user_id, spent)
                 raise AppError(
                     error.status_code,
                     error.code,

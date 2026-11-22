@@ -4,12 +4,15 @@ packages/core/src/firstRun.js."""
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.errors import AppError
 from app.import_schemas import StrictModel
 
 Short = Annotated[str, Field(max_length=40)]
+Competency = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+]
 Note = Annotated[str, Field(max_length=500)]
 Star = Annotated[str, Field(max_length=1200)]
 
@@ -23,7 +26,8 @@ class PlaybookRequest(StrictModel):
     cv_text: str = Field(default="", max_length=3000)
     notes: list[Note] = Field(default_factory=list, max_length=3)
     locale: Literal["en", "pt", "sv"] = "en"
-    competencies: list[Short] = Field(min_length=1, max_length=20)
+    # Blank entries could never match generated stories, so every call failed validation.
+    competencies: list[Competency] = Field(min_length=1, max_length=20)
     node_types: list[Short] = Field(min_length=1, max_length=60)
 
 

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     ai_playbook_daily_cap: int = Field(default=3, ge=0)
     # Playbook generations in flight at once; more are refused, never queued.
     ai_max_concurrent: int = Field(default=2, ge=1)
+    # Uncached grades and ledger imports per user per rolling day.
+    ai_grade_daily_cap: int = Field(default=100, ge=0)
+    ai_import_daily_cap: int = Field(default=10, ge=0)
     # Poe guide chat: its own model, so its free-tier quota is separate from grading.
     ai_model_poe: str = "gemini-3.1-flash-lite"
     ai_poe_daily_cap: int = Field(default=5, ge=0)
