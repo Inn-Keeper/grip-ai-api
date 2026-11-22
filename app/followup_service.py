@@ -74,23 +74,17 @@ class FollowupGradeService:
             limit = self.grading.current_limit()
             if limit is not None:
                 raise limit
-            try:
-                result = await self.grading.provider.generate(
-                    model, FOLLOWUP_PROMPT, context, FollowupSuggestion
-                )
-            except AppError as error:
-                self.grading.remember(error)
-                raise
-            if sorted(item.section for item in result.value.sections) != sorted(
-                answers
-            ):
+            value = await self.grading.generate(
+                FOLLOWUP_PROMPT, context, FollowupSuggestion, session.user_id
+            )
+            if sorted(item.section for item in value.sections) != sorted(answers):
                 raise AppError(
                     502,
                     "invalid_model_response",
                     "The model did not grade every answer exactly once.",
                 )
-            validate_evidence(result.value, answers)
-            suggestion = apply_placeholder_floor(result.value, answers)
+            validate_evidence(value, answers)
+            suggestion = apply_placeholder_floor(value, answers)
             self.cache.put(key, suggestion)
 
         graded = {item.section: item for item in suggestion.sections}

@@ -199,3 +199,24 @@ def test_daily_cap_counts_uncached_grades_and_refunds_provider_failures():
     capped = post(client, sections={**REAL_ANSWER, "api": "different"})
     assert capped.status_code == 429
     assert capped.json()["error"]["code"] == "grade_daily_limit"
+
+
+def test_answered_failures_still_count_toward_the_cap():
+    gemini = StubGemini(fail=AppError(502, "response_truncated", "Cut off."))
+    client = make_client(gemini=gemini, ai_grade_daily_cap=1)
+    assert post(client).status_code == 502
+    gemini.fail, gemini.value = None, suggestion(["covered"] * 6)
+    assert post(client).status_code == 429
+
+
+def test_busy_when_grading_slots_full():
+    import asyncio
+
+    client = make_client(
+        gemini=StubGemini(suggestion(["covered"] * 6)), ai_max_concurrent=1
+    )
+    with client:
+        asyncio.run(client.app.state.grade_service.slots.acquire())
+        response = post(client)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "busy"

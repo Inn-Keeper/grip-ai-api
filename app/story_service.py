@@ -66,15 +66,11 @@ class StoryGradeService:
             limit = self.grading.current_limit()
             if limit is not None:
                 raise limit
-            try:
-                result = await self.grading.provider.generate(
-                    model, STORY_PROMPT, context, StoryGradeSuggestion
-                )
-            except AppError as error:
-                self.grading.remember(error)
-                raise
-            validate_evidence(result.value, sections)
-            suggestion = apply_placeholder_floor(result.value, sections)
+            value = await self.grading.generate(
+                STORY_PROMPT, context, StoryGradeSuggestion, session.user_id
+            )
+            validate_evidence(value, sections)
+            suggestion = apply_placeholder_floor(value, sections)
             self.cache.put(key, suggestion)
         return StoryGradeResponse(
             request_id=UUID(request_id),

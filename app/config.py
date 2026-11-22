@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     ai_grade_cache_size: int = Field(default=256, ge=0)
     # First-run playbooks per user per rolling day; cache hits are free.
     ai_playbook_daily_cap: int = Field(default=3, ge=0)
-    # Playbook generations in flight at once; more are refused, never queued.
+    # Model calls in flight at once, counted separately for playbooks and for
+    # grading/story/follow-up/import; more are refused as busy, never queued.
     ai_max_concurrent: int = Field(default=2, ge=1)
     # Uncached grades and ledger imports per user per rolling day.
     ai_grade_daily_cap: int = Field(default=100, ge=0)

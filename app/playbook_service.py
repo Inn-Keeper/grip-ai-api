@@ -69,7 +69,7 @@ class PlaybookService:
                 )
         except AppError as error:
             # Refund only calls the provider never answered; bad output still cost quota.
-            self.cap.refund(session.user_id, spent)
+            self.cap.refund(session.user_id, spent, error)
             self.grading.remember(error)
             log.info("playbook %s: %s", request_id, error.code)
             raise

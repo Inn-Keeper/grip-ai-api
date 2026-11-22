@@ -61,7 +61,7 @@ class PoeChatService:
                     model, POE_PROMPT, self._context(payload), PoeReply
                 )
         except AppError as error:
-            self.cap.refund(session.user_id, spent)
+            self.cap.refund(session.user_id, spent, error)
             self.grading.remember(error, model)
             log.info("poe %s: %s", request_id, error.code)
             raise

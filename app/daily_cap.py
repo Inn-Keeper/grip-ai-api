@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from app.errors import AppError
 
 DAY = timedelta(days=1)
+# The provider generated a reply (and charged for it) before these were raised.
+ANSWERED = {"response_truncated", "invalid_model_response"}
 
 
 class DailyCap:
@@ -34,8 +36,10 @@ class DailyCap:
         spent.append(now)
         return now
 
-    def refund(self, user_id: str, spent: datetime) -> None:
-        """Give back a call the provider never answered."""
+    def refund(self, user_id: str, spent: datetime, error: AppError) -> None:
+        """Give back a call the provider never answered; answered ones cost quota."""
+        if error.code in ANSWERED:
+            return
         try:
             self._spent[user_id].remove(spent)
         except ValueError:

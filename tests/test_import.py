@@ -287,3 +287,12 @@ def test_oversized_body_fields_fail_schema_before_auth():
     assert post(make_client(), {"text": "x" * 200_000}, token=None).status_code == 422
     huge = {"filename": "a.md", "content_base64": "A" * 2_000_000}
     assert post(make_client(), huge, token=None).status_code == 422
+
+
+def test_answered_import_failure_is_not_refunded():
+    provider = SequenceProvider(fail=AppError(502, "response_truncated", "Cut off."))
+    client = make_client(gemini=provider, ai_import_daily_cap=1)
+    assert post(client, {"text": "Acme applied"}).status_code == 502
+    provider.fail = None
+    provider.ledgers = [ModelLedger(rows=[row([1])], unplaced=[])]
+    assert post(client, {"text": "Acme applied"}).status_code == 429

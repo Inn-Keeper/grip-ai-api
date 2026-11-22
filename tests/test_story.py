@@ -86,3 +86,14 @@ def test_unchanged_story_is_answered_from_cache():
     post(client)
     post(client)
     assert len(gemini.calls) == 1
+
+
+def test_story_grades_share_the_grading_cap():
+    client = make_client(
+        gemini=StubGemini(suggestion(["covered"] * len(STORY_SECTION_IDS))),
+        ai_grade_daily_cap=1,
+    )
+    assert post(client).status_code == 200
+    capped = post(client, sections={**STORY, STORY_SECTION_IDS[0]: "different"})
+    assert capped.status_code == 429
+    assert capped.json()["error"]["code"] == "grade_daily_limit"
