@@ -272,3 +272,9 @@ def test_repeated_reference_within_a_row_does_not_duplicate_source():
     assert len(body["rows"]) == 1
     assert body["rows"][0]["source"] == "Acme applied\nFrontend role"
     assert body["unplaced"] == []
+
+
+def test_oversized_body_fields_fail_schema_before_auth():
+    assert post(make_client(), {"text": "x" * 200_000}, token=None).status_code == 422
+    huge = {"filename": "a.md", "content_base64": "A" * 2_000_000}
+    assert post(make_client(), huge, token=None).status_code == 422

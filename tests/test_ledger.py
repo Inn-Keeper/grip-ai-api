@@ -1,6 +1,7 @@
 """Text extraction, redaction and chunking for ledger import."""
 
 import io
+import time
 import zipfile
 
 import pytest
@@ -126,3 +127,54 @@ def test_phone_redaction_handles_unicode_horizontal_spaces(space):
     clean, mapping = redact(text)
     assert clean == "Call [PHONE_1] about the application"
     assert restore(clean, mapping) == text
+
+
+def timed(fn, *args):
+    """Seconds fn(*args) takes; the slow-input tests expect well under a second."""
+    start = time.perf_counter()
+    fn(*args)
+    return time.perf_counter() - start
+
+
+class TestHostileInput:
+    def test_email_pattern_is_linear(self):
+        assert timed(redact, "a" * 40_000) < 0.5
+
+    def test_link_pattern_is_linear(self):
+        assert timed(redact, "http://x" + "." * 40_000 + "a") < 0.5
+
+    def test_link_keeps_trailing_punctuation_out(self):
+        text, mapping = redact("see https://a.dev/x).")
+        assert text == "see [LINK_1])."
+        assert mapping == {"[LINK_1]": "https://a.dev/x"}
+
+    def test_docx_with_doctype_is_rejected(self):
+        ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        xml = f'<!DOCTYPE d [<!ENTITY e "x">]><w:document xmlns:w="{ns}"/>'
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("word/document.xml", xml)
+        with pytest.raises(AppError) as error:
+            extract_text("a.docx", buffer.getvalue())
+        assert error.value.code == "unreadable_file"
+
+    def test_nested_paragraphs_are_linear(self):
+        ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        depth = 20_000
+        body = "<w:p><w:r><w:t>x</w:t></w:r>" * depth + "</w:p>" * depth
+        xml = f'<w:document xmlns:w="{ns}"><w:body>{body}</w:body></w:document>'
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("word/document.xml", xml)
+        assert timed(extract_text, "a.docx", buffer.getvalue()) < 0.5
+
+
+@pytest.mark.parametrize("value", ["salary 150k", "EUR 80k", "Salary: 95.000"])
+def test_salary_without_symbol_is_redacted(value):
+    text, mapping = redact(f"Acme {value} remote")
+    assert value not in text and value in mapping.values()
+
+
+def test_phone_with_slashes_is_redacted():
+    text, _ = redact("call 555/123/4567")
+    assert "555" not in text

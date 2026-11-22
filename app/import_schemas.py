@@ -22,9 +22,11 @@ class StrictModel(BaseModel):
 class ImportRequest(StrictModel):
     """Either pasted text, or a file sent as base64 (no multipart dependency)."""
 
-    text: str | None = None
+    # Loose caps reject huge bodies before auth; the service enforces the real
+    # limits (40,000 chars, 1 MB file) with clearer 413 errors.
+    text: str | None = Field(default=None, max_length=100_000)
     filename: str | None = Field(default=None, max_length=255)
-    content_base64: str | None = None
+    content_base64: str | None = Field(default=None, max_length=1_500_000)
 
     @model_validator(mode="after")
     def one_source(self):
