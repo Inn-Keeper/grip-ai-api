@@ -178,3 +178,27 @@ def test_salary_without_symbol_is_redacted(value):
 def test_phone_with_slashes_is_redacted():
     text, _ = redact("call 555/123/4567")
     assert "555" not in text
+
+
+def test_salary_pattern_is_linear():
+    assert timed(redact, "1," * 20_000) < 0.5
+
+
+@pytest.mark.parametrize("value", ["salary of 150k", "150k salary"])
+def test_bare_thousands_are_redacted(value):
+    text, _ = redact(f"Acme {value}")
+    assert "150k" not in text
+
+
+def test_utf16_docx_with_doctype_is_rejected():
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xml = (
+        '<?xml version="1.0" encoding="UTF-16"?>'
+        f'<!DOCTYPE d [<!ENTITY e "x">]><w:document xmlns:w="{ns}"/>'
+    ).encode("utf-16")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", xml)
+    with pytest.raises(AppError) as error:
+        extract_text("a.docx", buffer.getvalue())
+    assert error.value.code == "unreadable_file"
