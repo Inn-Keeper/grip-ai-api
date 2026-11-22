@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.body_limit import BodyLimit
 from app.config import Settings
 from app.errors import AppError
 from app.followup_schemas import FollowupGradeRequest, FollowupGradeResponse
@@ -84,6 +85,8 @@ def create_app(
     if grade_service is not None:
         attach_services(app, grade_service)
 
+    # Added before CORS so it runs inside it: a 413 still carries CORS headers.
+    app.add_middleware(BodyLimit)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

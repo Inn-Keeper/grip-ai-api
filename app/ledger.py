@@ -8,7 +8,10 @@ names in free text are not detected; the upload screen says so.
 import re
 import zipfile
 from io import BytesIO
-from xml.etree import ElementTree
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring
 
 from app.errors import AppError
 
@@ -24,8 +27,11 @@ PATTERNS = [
         "SALARY",
         re.compile(
             r"(?:R\$|US\$|[$€£])[^\S\r\n]?\d[\d.,]*[^\S\r\n]?[kKmM]?\b"
-            r"|\b\d[\d.,]*[^\S\r\n]?[kK]?[^\S\r\n]?(?:SEK|USD|EUR|GBP|BRL|kr)\b"
+            # (?<![\d.,]) starts numbers only at the head of a run: "1,1,1,..." stays linear.
+            r"|(?<![\d.,])\b\d[\d.,]*[^\S\r\n]?[kK]?[^\S\r\n]?(?:SEK|USD|EUR|GBP|BRL|kr)\b"
             r"|\b(?:SEK|USD|EUR|GBP|BRL|(?i:salary):?)[^\S\r\n]?\d[\d.,]*[kKmM]?\b"
+            # A bare "150k" in a job ledger is pay.
+            r"|(?<![\d.,])\b\d[\d.,]*[kK]\b"
         ),
     ),
     ("PHONE", re.compile(r"\+?\(?\d(?:[\d()./-]|[^\S\r\n]){5,}\d")),
@@ -50,14 +56,9 @@ def extract_text(filename: str, data: bytes) -> str:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             if archive.getinfo("word/document.xml").file_size > MAX_XML_BYTES:
                 raise AppError(413, "file_too_large", "This .docx file is too large.")
-            xml = archive.read("word/document.xml")
-            # Word never writes a DTD; refusing one blocks entity-expansion bombs.
-            if b"<!DOCTYPE" in xml:
-                raise AppError(
-                    422, "unreadable_file", "This .docx file could not be read."
-                )
-            root = ElementTree.fromstring(xml)
-    except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
+            # Word never writes a DTD; refusing one, in any encoding, blocks entity bombs.
+            root = fromstring(archive.read("word/document.xml"), forbid_dtd=True)
+    except (zipfile.BadZipFile, KeyError, ParseError, DefusedXmlException) as exc:
         raise AppError(
             422, "unreadable_file", "This .docx file could not be read."
         ) from exc
