@@ -1,0 +1,14 @@
+# Free Render services sleep after 15 idle minutes; a /health hit every 10 keeps this one awake.
+# Uses about 744 of the workspace's 750 free hours a month, so it fits only one always-on service.
+name: Render keep-alive
+on:
+  schedule: [{ cron: "*/10 * * * *" }]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      # Not robots.txt: Render answers that itself while asleep, so it never wakes the app.
+      - run: curl -fsS --max-time 120 https://grip-ai-api.onrender.com/health

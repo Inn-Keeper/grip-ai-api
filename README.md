@@ -462,11 +462,13 @@ The container binds `$PORT`, which Render injects, and falls back to 8000
 locally.
 
 **What the free plan costs.** The service sleeps after 15 minutes without
-traffic and takes about a minute to wake, so the first grade of a session waits
-for the container before it waits for the model. Both in-memory stores start
-empty after a sleep: unchanged reasoning is graded again, and a spent daily
-quota costs one request to rediscover. Within a working session, where the
-caches matter most, the service stays warm. A paid always-on plan can avoid idle suspension; verify current hosting terms
+traffic and takes up to a minute to wake. The
+[`render-keepalive`](.github/workflows/render-keepalive.yml) workflow calls
+`/health` every 10 minutes to prevent that. It uses about 744 of the workspace's
+750 free hours a month, so no other free Render service fits, and GitHub can run
+scheduled jobs late, so an occasional cold start still happens. Both in-memory
+stores (caches, daily caps, remembered limits) start empty after any sleep or
+restart. A paid always-on plan can avoid idle suspension; verify current hosting terms
 before choosing one.
 
 The local Ollama setup keeps inference on the Mac. A remotely hosted API cannot
