@@ -64,7 +64,7 @@ class PlaybookService:
         spent = self.cap.spend(session.user_id)
         try:
             async with self._slots:
-                result = await self.grading.provider_for(model).generate(
+                result = await self.grading.call_model(
                     model, PLAYBOOK_PROMPT, payload.model_dump(), ModelPlaybook
                 )
         except AppError as error:

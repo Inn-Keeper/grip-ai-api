@@ -9,6 +9,7 @@ memory, so resubmitting unchanged reasoning costs no provider quota.
 import asyncio
 import hashlib
 import json
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,7 @@ from app.config import Settings
 from app.daily_cap import DailyCap
 from app.errors import AppError
 from app.gemini import GeminiClient
+from app.model_log import ModelCall, record
 from app.ollama import OllamaClient
 from app.prompts import SYSTEM_PROMPT, build_context
 from app.schemas import (
@@ -187,6 +189,28 @@ class GradeService:
     def provider_for(self, model: str):
         return self.claude if model.startswith("claude-") else self.provider
 
+    async def call_model(self, model: str, prompt: str, context: dict, output_type):
+        """Every provider call goes through here, so ModelLog sees each one."""
+        started = time.monotonic()
+        try:
+            result = await self.provider_for(model).generate(
+                model, prompt, context, output_type
+            )
+        except Exception as error:
+            outcome = error.code if isinstance(error, AppError) else "error"
+            record(ModelCall(model, None, None, time.monotonic() - started, outcome))
+            raise
+        record(
+            ModelCall(
+                model,
+                result.prompt_tokens,
+                result.completion_tokens,
+                time.monotonic() - started,
+                "ok",
+            )
+        )
+        return result
+
     async def generate(
         self, prompt: str, context: dict, output_type, user_id=None, model=None
     ):
@@ -203,9 +227,7 @@ class GradeService:
         spent = self.cap.spend(user_id) if user_id else None
         try:
             async with self.slots:
-                result = await self.provider_for(model).generate(
-                    model, prompt, context, output_type
-                )
+                result = await self.call_model(model, prompt, context, output_type)
         except AppError as error:
             if spent:
                 self.cap.refund(user_id, spent, error)

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import uuid4
@@ -23,6 +24,7 @@ from app.import_schemas import (
     PostingsResponse,
 )
 from app.import_service import ImportService
+from app.model_log import ModelLog
 from app.playbook_schemas import ModelPlaybook, PlaybookRequest
 from app.playbook_service import PlaybookService
 from app.poe_schemas import PoeChatRequest, PoeReply
@@ -35,6 +37,9 @@ from app.story_schemas import StoryGradeRequest, StoryGradeResponse
 from app.story_service import StoryGradeService
 from app.supabase import SupabaseGateway
 
+
+# Uvicorn only configures its own loggers; without this the app's INFO lines never print.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -90,6 +95,8 @@ def create_app(
     if grade_service is not None:
         attach_services(app, grade_service)
 
+    # Innermost: sees every model call and names the model on the response.
+    app.add_middleware(ModelLog)
     # Added before CORS so it runs inside it: a 413 still carries CORS headers.
     app.add_middleware(BodyLimit)
     app.add_middleware(
@@ -98,6 +105,8 @@ def create_app(
         allow_credentials=False,
         allow_methods=["POST", "GET", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
+        # The web app logs this in dev mode.
+        expose_headers=["X-Grip-Model"],
     )
 
     @app.middleware("http")

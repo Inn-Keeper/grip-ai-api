@@ -57,7 +57,7 @@ class PoeChatService:
         spent = self.cap.spend(session.user_id)
         try:
             async with self._slots:
-                result = await self.grading.provider_for(model).generate(
+                result = await self.grading.call_model(
                     model, POE_PROMPT, self._context(payload), PoeReply
                 )
         except AppError as error:

@@ -406,6 +406,19 @@ Gemini's at `0`. `/api/v1/ai/status` has no caller, so it still reports the
 `AI_PROVIDER` state. Opus thinks before answering: keep `AI_TIMEOUT_SECONDS`
 well above Render's `30` for these users.
 
+## Which model served a request
+
+Every model call prints one line, in mprocs locally and in Render's logs:
+
+```
+INFO:     ai poe/chat             claude-haiku-5-5       in=412 out=96          1.1s ok
+INFO:     ai grade-talk-track     gemini-3.5-flash       in=- out=-             0.3s provider_limited
+```
+
+Feature, model, tokens, time and outcome only: never user ids or text. AI responses also carry an
+`X-Grip-Model` header (exposed through CORS) naming the models used; the web app prints it to the
+browser console in dev mode.
+
 ## Gemini free tier
 
 The free tier limits requests per project and per model. At the time of writing
