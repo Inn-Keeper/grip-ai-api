@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.body_limit import BodyLimit
+from app.claude import ClaudeClient
 from app.config import Settings
 from app.errors import AppError
 from app.followup_schemas import FollowupGradeRequest, FollowupGradeResponse
@@ -66,6 +67,7 @@ def create_app(
         async with httpx.AsyncClient(
             timeout=settings.ai_timeout_seconds
         ) as http_client:
+            claude = ClaudeClient(settings) if settings.claude_user_ids else None
             if grade_service is None:
                 attach_services(
                     app,
@@ -77,9 +79,12 @@ def create_app(
                             if settings.ai_provider == "ollama"
                             else GeminiClient
                         )(settings, http_client=http_client),
+                        claude=claude,
                     ),
                 )
             yield
+            if claude:
+                await claude.client.close()
 
     app = FastAPI(lifespan=lifespan, title="grip-ai-api")
     if grade_service is not None:
@@ -162,6 +167,8 @@ def create_app(
         }
         if settings.ai_provider == "gemini":
             required["GEMINI_API_KEY"] = settings.gemini_api_key
+        if settings.claude_user_ids:
+            required["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
         missing = [name for name, value in required.items() if not value]
         if missing:
             return JSONResponse(

@@ -50,7 +50,7 @@ class FollowupGradeService:
             )
 
         settings = self.grading.settings
-        model = settings.ai_model_grade
+        model = self.grading.model_for(session.user_id)
         context = build_context(payload.facts.model_dump(), {}, None)
         del context["candidate_sections"]
         context["followup_answers"] = [
@@ -71,11 +71,11 @@ class FollowupGradeService:
         ).hexdigest()
         suggestion = self.cache.get(key)
         if suggestion is None:
-            limit = self.grading.current_limit()
+            limit = self.grading.current_limit(model)
             if limit is not None:
                 raise limit
             value = await self.grading.generate(
-                FOLLOWUP_PROMPT, context, FollowupSuggestion, session.user_id
+                FOLLOWUP_PROMPT, context, FollowupSuggestion, session.user_id, model
             )
             if sorted(item.section for item in value.sections) != sorted(answers):
                 raise AppError(

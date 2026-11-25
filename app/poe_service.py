@@ -40,9 +40,9 @@ class PoeChatService:
         session = await self.grading.supabase.validate_session(token)
 
         settings = self.grading.settings
-        if settings.ai_provider != "gemini":
+        model = self.grading.model_for(session.user_id, "poe")
+        if settings.ai_provider != "gemini" and not model.startswith("claude-"):
             raise AppError(503, "poe_unavailable", "Poe is resting right now.")
-        model = settings.ai_model_poe
         limit = self.grading.current_limit(model)
         if limit is not None:
             raise limit
@@ -57,7 +57,7 @@ class PoeChatService:
         spent = self.cap.spend(session.user_id)
         try:
             async with self._slots:
-                result = await self.grading.provider.generate(
+                result = await self.grading.provider_for(model).generate(
                     model, POE_PROMPT, self._context(payload), PoeReply
                 )
         except AppError as error:

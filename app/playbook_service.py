@@ -42,11 +42,11 @@ class PlaybookService:
             raise AppError(401, "authentication_required", "Authentication required.")
         session = await self.grading.supabase.validate_session(token)
 
-        limit = self.grading.current_limit()
+        model = self.grading.model_for(session.user_id, "general")
+        limit = self.grading.current_limit(model)
         if limit is not None:
             raise limit
 
-        model = self.grading.settings.ai_model_grade
         key = self._key(session.user_id, model, payload)
         cached = self.cache.get(key)
         if cached is not None:
@@ -64,13 +64,13 @@ class PlaybookService:
         spent = self.cap.spend(session.user_id)
         try:
             async with self._slots:
-                result = await self.grading.provider.generate(
+                result = await self.grading.provider_for(model).generate(
                     model, PLAYBOOK_PROMPT, payload.model_dump(), ModelPlaybook
                 )
         except AppError as error:
             # Refund only calls the provider never answered; bad output still cost quota.
             self.cap.refund(session.user_id, spent, error)
-            self.grading.remember(error)
+            self.grading.remember(error, model)
             log.info("playbook %s: %s", request_id, error.code)
             raise
         playbook = result.value

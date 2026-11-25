@@ -14,6 +14,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from app.claude import CLAUDE_MODELS, ClaudeClient
 from app.config import Settings
 from app.daily_cap import DailyCap
 from app.errors import AppError
@@ -141,10 +142,12 @@ class GradeService:
         supabase: SupabaseGateway,
         provider: GeminiClient | OllamaClient,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        claude: ClaudeClient | None = None,
     ) -> None:
         self.settings = settings
         self.supabase = supabase
         self.provider = provider
+        self.claude = claude
         self.clock = clock
         self.cache = GradeCache(settings.ai_grade_cache_size)
         self.cap = DailyCap(
@@ -173,9 +176,23 @@ class GradeService:
             limit.status_code, limit.code, limit.message, retry_after=remaining
         )
 
-    async def generate(self, prompt: str, context: dict, output_type, user_id=None):
+    def model_for(self, user_id: str | None, use: str = "grade") -> str:
+        """Claude for allowlisted users, AI_PROVIDER's model for everyone else."""
+        if self.claude and user_id in self.settings.claude_user_ids:
+            return CLAUDE_MODELS[use]
+        if use == "poe":
+            return self.settings.ai_model_poe
+        return self.settings.ai_model_grade
+
+    def provider_for(self, model: str):
+        return self.claude if model.startswith("claude-") else self.provider
+
+    async def generate(
+        self, prompt: str, context: dict, output_type, user_id=None, model=None
+    ):
         """One grading-model call: busy check, then the daily cap when user_id is
         given (refunded unless the model answered), then the provider."""
+        model = model or self.settings.ai_model_grade
         if self.slots.locked():
             raise AppError(
                 503,
@@ -186,13 +203,13 @@ class GradeService:
         spent = self.cap.spend(user_id) if user_id else None
         try:
             async with self.slots:
-                result = await self.provider.generate(
-                    self.settings.ai_model_grade, prompt, context, output_type
+                result = await self.provider_for(model).generate(
+                    model, prompt, context, output_type
                 )
         except AppError as error:
             if spent:
                 self.cap.refund(user_id, spent, error)
-            self.remember(error)
+            self.remember(error, model)
             raise
         return result.value
 
@@ -235,7 +252,7 @@ class GradeService:
                 "Write some reasoning before asking for a grade.",
             )
 
-        model = self.settings.ai_model_grade
+        model = self.model_for(session.user_id)
         context = build_context(
             payload.facts.model_dump(), sections, payload.self_rating
         )
@@ -249,11 +266,11 @@ class GradeService:
         key = grade_cache_key(session.user_id, model, context)
         suggestion = self.cache.get(key)
         if suggestion is None:
-            limit = self.current_limit()
+            limit = self.current_limit(model)
             if limit is not None:
                 raise limit
             value = await self.generate(
-                SYSTEM_PROMPT, context, GradeSuggestion, session.user_id
+                SYSTEM_PROMPT, context, GradeSuggestion, session.user_id, model
             )
             validate_evidence(value, sections)
             suggestion = apply_placeholder_floor(value, sections)

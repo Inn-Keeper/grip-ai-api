@@ -48,8 +48,9 @@ services:
         value: "8000"
       - key: AI_REASONING_EFFORT
         value: low
+      # Claude Opus thinks before it answers, so 30 is too tight.
       - key: AI_TIMEOUT_SECONDS
-        value: "30"
+        value: "120"
       - key: AI_MAX_RETRIES
         value: "1"
       - key: AI_CONTEXT_MAX_CHARS
@@ -64,4 +65,9 @@ services:
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      # Supabase user ids served by Claude instead of Gemini, comma separated.
+      - key: ANTHROPIC_USER_IDS
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false

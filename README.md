@@ -4,8 +4,9 @@ FastAPI service that grades the **talk track** of a Grip Arch Board
 round — the written reasoning a candidate produces alongside a system design.
 
 The default provider is **local Qwen through Ollama** (`grip-grader`). Gemini
-remains available with `AI_PROVIDER=gemini` for comparison. No new Python
-dependency is required: both adapters use the existing HTTP client.
+remains available with `AI_PROVIDER=gemini` for comparison. Users listed in
+`ANTHROPIC_USER_IDS` are served by Claude instead (see *Claude for allowlisted
+users*); that adapter uses the official `anthropic` SDK.
 
 The board itself already scores deterministically: which components exist, how
 they are wired, whether the numbers work. That is checked in
@@ -240,6 +241,7 @@ failures are not converted into input errors.
 | `provider_unavailable` | 503 | Transport failure or repeated 5xx. |
 | `provider_quota_exhausted` | 429 | Today's free Gemini quota is spent; `Retry-After` points at midnight Pacific. |
 | `model_not_found` | 503 | Ollama could not find the model; pull or create it. |
+| `provider_credits_exhausted` | 503 | Claude only: the Anthropic account is out of credits or hit its spend cap. |
 
 ## Ledger import
 
@@ -378,9 +380,31 @@ feature changes**, or Poe will describe an app that no longer exists.
 | `AI_IMPORT_DAILY_CAP` | no | Ledger imports per user per rolling day; defaults to `10`. Refunded only when no chunk was answered. |
 | `AI_POE_DAILY_CAP` | no | Poe messages per user per rolling day; defaults to `5`. |
 | `AI_POE_MAX_CONCURRENT` | no | Poe replies in flight at once; defaults to `2`. More are refused with `busy`. |
+| `ANTHROPIC_USER_IDS` | no | Comma separated Supabase user ids served by Claude; empty turns Claude off. |
+| `ANTHROPIC_API_KEY` | with `ANTHROPIC_USER_IDS` | Server-only Anthropic credential; `/ready` names it when missing. |
 
 The model ids in `STRICT_GEMINI_MODELS` were copied from `ativscrum-ai-api`.
 Confirm them against the provider's current model list before deploying.
+
+## Claude for allowlisted users
+
+Users in `ANTHROPIC_USER_IDS` are served by Claude, so the product can be
+validated without the Gemini free tier. Everyone else keeps `AI_PROVIDER`.
+Models are fixed in `app/claude.py`:
+
+| Use | Model | Effort |
+| --- | --- | --- |
+| Talk track, story and follow-up grading | `claude-opus-5-5` | medium |
+| Ledger import and first-run playbook | `claude-sonnet-5-5` | medium |
+| Poe chat | `claude-haiku-5-5` | low |
+
+The same schemas, evidence check, placeholder rule and daily caps apply. Opus
+and Sonnet requests opt into the server-side refusal fallback. A spent balance
+returns `provider_credits_exhausted`; there is no automatic fallback to Gemini.
+Claude 5 models take no `temperature`, so grades repeat less exactly than
+Gemini's at `0`. `/api/v1/ai/status` has no caller, so it still reports the
+`AI_PROVIDER` state. Opus thinks before answering: keep `AI_TIMEOUT_SECONDS`
+well above Render's `30` for these users.
 
 ## Gemini free tier
 

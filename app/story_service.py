@@ -45,7 +45,7 @@ class StoryGradeService:
             )
 
         settings = self.grading.settings
-        model = settings.ai_model_grade
+        model = self.grading.model_for(session.user_id)
         context = {
             "competency": payload.competency,
             "title": payload.title,
@@ -63,11 +63,11 @@ class StoryGradeService:
         ).hexdigest()
         suggestion = self.cache.get(key)
         if suggestion is None:
-            limit = self.grading.current_limit()
+            limit = self.grading.current_limit(model)
             if limit is not None:
                 raise limit
             value = await self.grading.generate(
-                STORY_PROMPT, context, StoryGradeSuggestion, session.user_id
+                STORY_PROMPT, context, StoryGradeSuggestion, session.user_id, model
             )
             validate_evidence(value, sections)
             suggestion = apply_placeholder_floor(value, sections)

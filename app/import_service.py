@@ -83,12 +83,13 @@ class ImportService:
         chunks = numbered_chunks(redacted_lines, CHUNK_CHARS)
         # One import is one unit, however many chunks it takes.
         spent = self.cap.spend(session.user_id)
+        model = self.grading.model_for(session.user_id, "general")
         answered = False
         candidates: list[tuple[ImportRow, set[int]]] = []
         today = self.grading.clock().date().isoformat()
         for chunk, allowed in chunks:
             try:
-                ledger = await self._generate({"today": today, "ledger": chunk})
+                ledger = await self._generate({"today": today, "ledger": chunk}, model)
                 answered = True
             except AppError as error:
                 # Earlier chunks already cost quota, so a late failure is not refunded.
@@ -155,11 +156,13 @@ class ImportService:
             )
         return text
 
-    async def _generate(self, context: dict) -> ModelLedger:
-        limit = self.grading.current_limit()
+    async def _generate(self, context: dict, model: str) -> ModelLedger:
+        limit = self.grading.current_limit(model)
         if limit is not None:
             raise limit
-        return await self.grading.generate(IMPORT_PROMPT, context, ModelLedger)
+        return await self.grading.generate(
+            IMPORT_PROMPT, context, ModelLedger, model=model
+        )
 
     @staticmethod
     def _row(

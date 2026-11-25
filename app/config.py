@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     ai_model_poe: str = "gemini-3.1-flash-lite"
     ai_poe_daily_cap: int = Field(default=5, ge=0)
     ai_poe_max_concurrent: int = Field(default=2, ge=1)
+    anthropic_api_key: str = ""
+    # Supabase user ids served by Claude instead of AI_PROVIDER, comma separated.
+    anthropic_user_ids: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -78,6 +81,14 @@ class Settings(BaseSettings):
                     "AI_MAX_OUTPUT_TOKENS must leave room for the prompt in OLLAMA_CONTEXT_LENGTH"
                 )
         return self
+
+    @property
+    def claude_user_ids(self) -> frozenset[str]:
+        return frozenset(
+            value.strip()
+            for value in self.anthropic_user_ids.split(",")
+            if value.strip()
+        )
 
     @computed_field
     @property

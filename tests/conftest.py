@@ -76,7 +76,9 @@ def facts() -> ScenarioFacts:
     return ScenarioFacts(**CATALOG_FACTS)
 
 
-def make_client(supabase=None, gemini=None, clock=None, **overrides) -> TestClient:
+def make_client(
+    supabase=None, gemini=None, clock=None, claude=None, **overrides
+) -> TestClient:
     from app.service import GradeService
 
     config = settings(**overrides)
@@ -85,5 +87,6 @@ def make_client(supabase=None, gemini=None, clock=None, **overrides) -> TestClie
         supabase or StubSupabase(),
         gemini or StubGemini(),
         **({"clock": clock} if clock else {}),
+        claude=claude,
     )
     return TestClient(create_app(config, grade_service=service))

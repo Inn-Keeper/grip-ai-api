@@ -14,6 +14,8 @@ dependencies = [
     "httpx==0.28.1",
     # Parses uploaded .docx XML with DTDs and entities refused.
     "defusedxml==0.7.1",
+    # Claude for allowlisted users: typed errors, retries, schema transform.
+    "anthropic==2.14.0",
 ]
 
 [project.optional-dependencies]
